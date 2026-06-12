@@ -1,0 +1,147 @@
+version: "3.9"
+
+services:
+  # ========== Databases ==========
+  postgres:
+    image: postgres:16-alpine
+    container_name: mech-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: mech_ai
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: mech-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  milvus-standalone:
+    image: milvusdb/milvus:v2.3.4
+    container_name: mech-milvus
+    environment:
+      ETCD_USE_EMBED: "true"
+      COMMON_STORAGETYPE: local
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    volumes:
+      - milvus_data:/var/lib/milvus
+
+  elasticsearch:
+    image: elasticsearch:8.11.1
+    container_name: mech-es
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+
+  minio:
+    image: minio/minio
+    container_name: mech-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  # ========== Backend Services ==========
+  user-service:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.service
+    container_name: mech-user-svc
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+    working_dir: /app/user-service
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/mech_ai"
+      REDIS_URL: "redis://redis:6379/0"
+    depends_on:
+      - postgres
+      - redis
+
+  knowledge-service:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.service
+    container_name: mech-knowledge-svc
+    command: uvicorn main:app --host 0.0.0.0 --port 8002 --reload
+    working_dir: /app/knowledge-service
+    ports:
+      - "8002:8002"
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/mech_ai"
+      MILVUS_HOST: "milvus-standalone"
+      MINIO_ENDPOINT: "minio:9000"
+    depends_on:
+      - postgres
+      - milvus-standalone
+      - minio
+
+  agent-service:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.service
+    container_name: mech-agent-svc
+    command: uvicorn main:app --host 0.0.0.0 --port 8003 --reload
+    working_dir: /app/agent-service
+    ports:
+      - "8003:8003"
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/mech_ai"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      DEEPSEEK_BASE_URL: "${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}"
+    depends_on:
+      - postgres
+
+  # ========== Frontend ==========
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mech-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: "http://localhost/api"
+
+  # ========== Nginx ==========
+  nginx:
+    image: nginx:alpine
+    container_name: mech-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - user-service
+      - knowledge-service
+      - agent-service
+      - frontend
+
+volumes:
+  pg_data:
+  redis_data:
+  milvus_data:
+  es_data:
+  minio_data:
