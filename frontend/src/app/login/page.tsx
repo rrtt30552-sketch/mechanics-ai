@@ -16,9 +16,15 @@ export default function LoginPage() {
 
     try {
       const url = mode === 'login' ? '/api/users/login' : '/api/users/register';
-      const body = mode === 'login'
-        ? { username: form.username, password: form.password }
-        : { username: form.username, password: form.password, email: form.email, full_name: form.full_name };
+      const body =
+        mode === 'login'
+          ? { username: form.username, password: form.password }
+          : {
+              username: form.username,
+              password: form.password,
+              email: form.email,
+              full_name: form.full_name,
+            };
 
       const res = await fetch(url, {
         method: 'POST',
@@ -27,13 +33,16 @@ export default function LoginPage() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({ detail: '请求失败' }));
         throw new Error(data.detail || '请求失败');
       }
 
       const data = await res.json();
+
       if (mode === 'login') {
+        // 存储 JWT token
         localStorage.setItem('token', data.access_token);
+        // 跳转到聊天页
         window.location.href = '/chat';
       } else {
         setMode('login');
@@ -65,7 +74,11 @@ export default function LoginPage() {
         </div>
 
         {error && (
-          <div className={`mb-4 p-3 rounded-lg text-sm ${error.includes('成功') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+          <div
+            className={`mb-4 p-3 rounded-lg text-sm ${
+              error.includes('成功') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+            }`}
+          >
             {error}
           </div>
         )}
@@ -114,14 +127,13 @@ export default function LoginPage() {
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               required
-              minLength={6}
             />
           </div>
 
           <button
             type="submit"
-            className="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
             disabled={loading}
+            className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
           >
             {loading ? '处理中...' : mode === 'login' ? '登录' : '注册'}
           </button>
@@ -129,19 +141,19 @@ export default function LoginPage() {
 
         <div className="mt-6 text-center text-sm text-slate-500">
           {mode === 'login' ? (
-            <span>
+            <>
               没有账号？{' '}
-              <button className="text-blue-600 hover:underline font-medium" onClick={() => { setMode('register'); setError(''); }}>
+              <button className="text-blue-600 hover:underline font-medium" onClick={() => setMode('register')}>
                 注册
               </button>
-            </span>
+            </>
           ) : (
-            <span>
+            <>
               已有账号？{' '}
-              <button className="text-blue-600 hover:underline font-medium" onClick={() => { setMode('login'); setError(''); }}>
+              <button className="text-blue-600 hover:underline font-medium" onClick={() => setMode('login')}>
                 登录
               </button>
-            </span>
+            </>
           )}
         </div>
       </div>

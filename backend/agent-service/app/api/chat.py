@@ -8,6 +8,7 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from shared.database import get_db
 from shared.rag import rag_service
+from shared.auth_deps import get_current_user_id
 
 from app.schemas.chat import ChatRequest, ChatResponse, ConversationCreate, ConversationResponse, MessageResponse
 from app.services.chat_service import ChatService
@@ -17,15 +18,23 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
 @router.post("/", response_model=ChatResponse)
-async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
+async def chat(
+    req: ChatRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
+):
     """非流式对话（带 RAG）"""
     svc = ChatService(db)
-    result = await svc.chat(user_id=1, message=req.message, conversation_id=req.conversation_id)
+    result = await svc.chat(user_id=user_id, message=req.message, conversation_id=req.conversation_id)
     return result
 
 
 @router.post("/stream")
-async def chat_stream(req: ChatRequest, db: AsyncSession = Depends(get_db)):
+async def chat_stream(
+    req: ChatRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
+):
     """SSE 流式对话（带 RAG 检索）"""
     svc = ChatService(db)
 
@@ -33,7 +42,7 @@ async def chat_stream(req: ChatRequest, db: AsyncSession = Depends(get_db)):
     if req.conversation_id:
         conv = await svc.get_conversation(req.conversation_id)
     else:
-        conv = await svc.create_conversation(user_id=1)
+        conv = await svc.create_conversation(user_id=user_id)
 
     # Save user message
     await svc.save_message(conv.id, "user", req.message)
@@ -46,10 +55,15 @@ async def chat_stream(req: ChatRequest, db: AsyncSession = Depends(get_db)):
     context = None
     sources = []
     try:
-        results = await rag_service.search(req.message, top_k=3, user_id=1)
+        results = await rag_service.search(req.message, top_k=3, user_id=user_id)
         if results:
-            sources = [{"doc_id": r["document_id"], "score": r["score"], "content": r["content"][:200]} for r in results]
-            context = "\n\n---\n\n".join([f"[来源 {i+1}: 文档#{r['document_id']}]\n{r['content']}" for i, r in enumerate(results)])
+            sources = [
+                {"doc_id": r["document_id"], "score": r["score"], "content": r["content"][:200]}
+                for r in results
+            ]
+            context = "\n\n---\n\n".join(
+                [f"[来源 {i+1}: 文档#{r['document_id']}]\n{r['content']}" for i, r in enumerate(results)]
+            )
     except Exception as e:
         import logging
         logging.warning(f"RAG retrieval failed: {e}")
@@ -76,13 +90,22 @@ async def chat_stream(req: ChatRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/conversations", response_model=List[ConversationResponse])
-async def list_conversations(skip: int = 0, limit: int = 50, db: AsyncSession = Depends(get_db)):
+async def list_conversations(
+    skip: int = 0,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
+):
     svc = ChatService(db)
-    return await svc.list_conversations(user_id=1, skip=skip, limit=limit)
+    return await svc.list_conversations(user_id=user_id, skip=skip, limit=limit)
 
 
 @router.get("/conversations/{conv_id}", response_model=ConversationResponse)
-async def get_conversation(conv_id: int, db: AsyncSession = Depends(get_db)):
+async def get_conversation(
+    conv_id: int,
+    db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
+):
     svc = ChatService(db)
     conv = await svc.get_conversation(conv_id)
     messages = await svc.get_history(conv_id, limit=100)
@@ -93,6 +116,10 @@ async def get_conversation(conv_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/conversations/{conv_id}")
-async def delete_conversation(conv_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_conversation(
+    conv_id: int,
+    db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
+):
     # TODO: implement delete
     return {"message": "Conversation deleted"}

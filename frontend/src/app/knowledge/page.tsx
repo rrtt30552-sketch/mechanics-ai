@@ -18,14 +18,29 @@ export default function KnowledgePage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [error, setError] = useState('');
+
+  const getToken = () => localStorage.getItem('token');
 
   useEffect(() => {
+    const token = getToken();
+    if (!token) {
+      window.location.href = '/login';
+      return;
+    }
     fetchDocuments();
   }, []);
 
   const fetchDocuments = async () => {
+    const token = getToken();
     try {
-      const res = await fetch('/api/documents/');
+      const res = await fetch('/api/documents/', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.status === 401) {
+        window.location.href = '/login';
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         setDocuments(data);
@@ -38,6 +53,9 @@ export default function KnowledgePage() {
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setUploading(true);
+    setError('');
+
+    const token = getToken();
 
     for (const file of Array.from(files)) {
       const formData = new FormData();
@@ -47,16 +65,34 @@ export default function KnowledgePage() {
       try {
         const res = await fetch('/api/documents/upload', {
           method: 'POST',
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
           body: formData,
         });
         if (res.ok) {
           await fetchDocuments();
+        } else {
+          const data = await res.json().catch(() => ({ detail: '上传失败' }));
+          setError(`${file.name}: ${data.detail || '上传失败'}`);
         }
       } catch (err) {
-        console.error('Upload failed:', err);
+        setError(`${file.name}: 上传出错`);
       }
     }
     setUploading(false);
+  };
+
+  const handleDelete = async (docId: number) => {
+    if (!confirm('确定要删除这个文档吗？')) return;
+    const token = getToken();
+    try {
+      const res = await fetch(`/api/documents/${docId}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        await fetchDocuments();
+      }
+    } catch {}
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -80,6 +116,7 @@ export default function KnowledgePage() {
     pptx: '📑',
     ppt: '📑',
     dwg: '📐',
+    txt: '📃',
   };
 
   return (
@@ -88,119 +125,121 @@ export default function KnowledgePage() {
       <header className="bg-white border-b border-slate-200 px-4 py-3">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link href="/" className="text-slate-600 hover:text-blue-600">← 返回</Link>
+            <Link href="/" className="text-slate-600 hover:text-blue-600">
+              ← 返回
+            </Link>
             <h1 className="text-xl font-bold text-slate-900">📚 知识库管理</h1>
           </div>
-          <div className="flex items-center gap-3">
-            <input
-              type="file"
-              id="fileInput"
-              className="hidden"
-              multiple
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.dwg,.txt"
-              onChange={(e) => handleUpload(e.target.files)}
-            />
-            <button
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
-              onClick={() => document.getElementById('fileInput')?.click()}
-              disabled={uploading}
-            >
-              {uploading ? '上传中...' : '+ 上传文档'}
-            </button>
-          </div>
+          <Link
+            href="/chat"
+            className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+          >
+            去问答 →
+          </Link>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Upload Zone */}
         <div
-          className={`border-2 border-dashed rounded-2xl p-12 text-center mb-8 transition-all ${
-            dragOver ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-white'
+          className={`border-2 border-dashed rounded-xl p-8 text-center mb-6 transition-colors ${
+            dragOver
+              ? 'border-blue-500 bg-blue-50'
+              : 'border-slate-300 bg-white hover:border-blue-400'
           }`}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
         >
-          <div className="text-4xl mb-4">📁</div>
-          <p className="text-lg font-medium text-slate-700 mb-2">拖拽文件到此处上传</p>
-          <p className="text-sm text-slate-500">支持 PDF、Word、Excel、PPT、CAD 等格式</p>
+          <div className="text-4xl mb-3">📁</div>
+          <p className="text-slate-700 font-medium mb-1">
+            拖拽文件到此处上传
+          </p>
+          <p className="text-slate-400 text-sm mb-4">
+            支持 PDF、Word、Excel、PPT、TXT 格式
+          </p>
+          <label className="inline-block cursor-pointer">
+            <span className="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+              {uploading ? '上传中...' : '选择文件'}
+            </span>
+            <input
+              type="file"
+              className="hidden"
+              multiple
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+              onChange={(e) => handleUpload(e.target.files)}
+              disabled={uploading}
+            />
+          </label>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-          <div className="bg-white rounded-xl p-4 border border-slate-200">
-            <div className="text-2xl font-bold text-blue-600">{documents.length}</div>
-            <div className="text-sm text-slate-500">文档总数</div>
-          </div>
-          <div className="bg-white rounded-xl p-4 border border-slate-200">
-            <div className="text-2xl font-bold text-green-600">
-              {documents.reduce((sum, d) => sum + d.chunk_count, 0)}
-            </div>
-            <div className="text-sm text-slate-500">知识切片</div>
-          </div>
-          <div className="bg-white rounded-xl p-4 border border-slate-200">
-            <div className="text-2xl font-bold text-purple-600">
-              {formatSize(documents.reduce((sum, d) => sum + d.file_size, 0))}
-            </div>
-            <div className="text-sm text-slate-500">总存储</div>
-          </div>
-        </div>
-
-        {/* Document List */}
-        {documents.length === 0 ? (
-          <div className="text-center py-16 text-slate-500">
-            <div className="text-5xl mb-4">📭</div>
-            <p className="text-lg">还没有上传任何文档</p>
-            <p className="text-sm mt-1">上传文档后，AI 将自动解析并建立知识索引</p>
-          </div>
-        ) : (
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">文档</th>
-                  <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">类型</th>
-                  <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">大小</th>
-                  <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">切片</th>
-                  <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">上传时间</th>
-                  <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {documents.map((doc) => (
-                  <tr key={doc.id} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">{typeIcon[doc.file_type] || '📄'}</span>
-                        <div>
-                          <div className="font-medium text-slate-900">{doc.title}</div>
-                          {doc.tags.length > 0 && (
-                            <div className="flex gap-1 mt-1">
-                              {doc.tags.map((tag) => (
-                                <span key={tag} className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-600 uppercase">{doc.file_type}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{formatSize(doc.file_size)}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{doc.chunk_count}</td>
-                    <td className="px-6 py-4 text-sm text-slate-500">
-                      {new Date(doc.created_at).toLocaleDateString('zh-CN')}
-                    </td>
-                    <td className="px-6 py-4">
-                      <button className="text-red-500 hover:text-red-700 text-sm">删除</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {error && (
+          <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
+            {error}
           </div>
         )}
+
+        {/* Document List */}
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
+            <h2 className="font-medium text-slate-900">
+              已上传文档 ({documents.length})
+            </h2>
+          </div>
+
+          {documents.length === 0 ? (
+            <div className="text-center py-12 text-slate-400">
+              <p>还没有上传任何文档</p>
+              <p className="text-sm mt-1">上传文档后，AI 问答会基于这些文档进行回答</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {documents.map((doc) => (
+                <div
+                  key={doc.id}
+                  className="px-4 py-3 flex items-center justify-between hover:bg-slate-50"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{typeIcon[doc.file_type] || '📄'}</span>
+                    <div>
+                      <p className="font-medium text-slate-900 text-sm">{doc.title}</p>
+                      <p className="text-xs text-slate-400">
+                        {doc.file_type.toUpperCase()} · {formatSize(doc.file_size)} ·{' '}
+                        {doc.chunk_count} 个片段
+                        {doc.category && ` · ${doc.category}`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400">
+                      {new Date(doc.created_at).toLocaleDateString('zh-CN')}
+                    </span>
+                    <button
+                      onClick={() => handleDelete(doc.id)}
+                      className="text-red-400 hover:text-red-600 text-sm px-2 py-1 rounded"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Tips */}
+        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
+          <h3 className="font-medium text-blue-900 mb-2">💡 使用提示</h3>
+          <ul className="text-sm text-blue-700 space-y-1">
+            <li>• 上传文档后，系统会自动解析、分块并生成向量索引</li>
+            <li>• 在 <Link href="/chat" className="underline font-medium">AI 问答</Link> 中提问时，会自动检索知识库中的相关内容</li>
+            <li>• 支持 PDF、Word、Excel、PPT、TXT 等格式</li>
+            <li>• 文档内容越专业，AI 回答越准确</li>
+          </ul>
+        </div>
       </div>
     </div>
   );

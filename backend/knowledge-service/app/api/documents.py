@@ -7,6 +7,7 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from shared.database import get_db
 from shared.exceptions import BadRequestException
+from shared.auth_deps import get_current_user_id
 
 from app.schemas.document import DocumentCreate, DocumentResponse, SearchRequest, SearchResponse
 from app.services.knowledge_service import KnowledgeService
@@ -26,6 +27,7 @@ async def upload_document(
     description: Optional[str] = Form(None),
     is_public: bool = Form(False),
     db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
 ):
     if not file.filename:
         raise BadRequestException("No file provided")
@@ -40,7 +42,7 @@ async def upload_document(
     # Chunk text
     chunks = chunk_text(text)
     if not chunks:
-        raise BadRequestException("Document is empty or could not be parsed")
+        raise BadRequestException("文档为空或无法解析")
 
     # Determine file type
     import os as _os
@@ -59,7 +61,7 @@ async def upload_document(
             description=description,
             is_public=is_public,
         ),
-        user_id=1,  # TODO: get from auth
+        user_id=user_id,
         file_path=file_path,
         file_type=file_type,
         file_size=file_size,
@@ -75,7 +77,7 @@ async def upload_document(
         await rag_service.index_document(
             doc_id=doc.id,
             chunks=chunks,
-            user_id=1,  # TODO: get from auth
+            user_id=user_id,
             file_type=file_type,
             category=category or "",
         )
@@ -88,24 +90,32 @@ async def upload_document(
 
 @router.get("/", response_model=List[DocumentResponse])
 async def list_documents(
-    user_id: Optional[int] = None,
     category: Optional[str] = None,
     skip: int = 0,
     limit: int = 20,
     db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
 ):
     svc = KnowledgeService(db)
-    return await svc.list_documents(user_id, category, skip, limit)
+    return await svc.list_documents(user_id=user_id, category=category, skip=skip, limit=limit)
 
 
 @router.get("/{doc_id}", response_model=DocumentResponse)
-async def get_document(doc_id: int, db: AsyncSession = Depends(get_db)):
+async def get_document(
+    doc_id: int,
+    db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
+):
     svc = KnowledgeService(db)
     return await svc.get_document(doc_id)
 
 
 @router.delete("/{doc_id}")
-async def delete_document(doc_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_document(
+    doc_id: int,
+    db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
+):
     svc = KnowledgeService(db)
 
     # 删除 Milvus 向量
@@ -124,13 +134,14 @@ async def delete_document(doc_id: int, db: AsyncSession = Depends(get_db)):
 async def search_documents(
     req: SearchRequest,
     db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
 ):
     """语义搜索知识库"""
     from shared.rag import rag_service
     results = await rag_service.search(
         query=req.query,
         top_k=req.top_k,
-        user_id=1,  # TODO: get from auth
+        user_id=user_id,
         category=req.category,
     )
     return SearchResponse(results=results, query=req.query, total=len(results))
