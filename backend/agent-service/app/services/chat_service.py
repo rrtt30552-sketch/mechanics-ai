@@ -10,6 +10,15 @@ from app.models.chat import Conversation, Message
 from app.schemas.chat import ConversationCreate
 from app.services.llm_client import llm_client
 
+# Import RAG service
+try:
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+    from shared.rag import rag_service
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
+
 
 class ChatService:
     def __init__(self, db: AsyncSession):
@@ -73,8 +82,16 @@ class ChatService:
         history_msgs = await self.get_history(conv.id, limit=20)
         history = [{"role": m.role, "content": m.content} for m in history_msgs[:-1]]  # exclude current
 
-        # Call LLM
-        messages = llm_client.build_messages(message, history=history)
+        # RAG: retrieve relevant context from knowledge base
+        context = None
+        if RAG_AVAILABLE:
+            try:
+                context = await rag_service.get_context(message, top_k=3)
+            except Exception:
+                pass  # RAG failure is non-fatal
+
+        # Call LLM with context
+        messages = llm_client.build_messages(message, history=history, context=context)
         reply = await llm_client.chat(messages)
 
         # Save assistant message

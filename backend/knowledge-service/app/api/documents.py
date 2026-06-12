@@ -65,7 +65,15 @@ async def upload_document(
     # Save chunks
     await svc.save_chunks(doc.id, chunks)
 
-    # TODO: Generate embeddings and store in Milvus
+    # Generate embeddings and store in vector store
+    try:
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+        from shared.rag import rag_service
+        await rag_service.index_document(doc.id, chunks)
+    except Exception as e:
+        import logging
+        logging.warning(f"Embedding indexing failed (non-fatal): {e}")
 
     return doc
 
@@ -97,6 +105,11 @@ async def delete_document(doc_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("/search", response_model=SearchResponse)
 async def search_documents(req: SearchRequest, db: AsyncSession = Depends(get_db)):
-    # TODO: Vector search via Milvus
-    # For now, return placeholder
-    return SearchResponse(results=[], query=req.query, total=0)
+    try:
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+        from shared.rag import rag_service
+        results = await rag_service.search(req.query, top_k=req.top_k)
+        return SearchResponse(results=results, query=req.query, total=len(results))
+    except Exception as e:
+        return SearchResponse(results=[], query=req.query, total=0)
