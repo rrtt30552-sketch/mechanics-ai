@@ -1,16 +1,18 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
+import logging
 
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from shared.database import get_db
-from shared.security import verify_token
-from shared.exceptions import UnauthorizedException, BadRequestException
+from shared.exceptions import BadRequestException
 
 from app.schemas.document import DocumentCreate, DocumentResponse, SearchRequest, SearchResponse
 from app.services.knowledge_service import KnowledgeService
 from app.services.document_parser import parse_document, chunk_text
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -37,6 +39,8 @@ async def upload_document(
 
     # Chunk text
     chunks = chunk_text(text)
+    if not chunks:
+        raise BadRequestException("Document is empty or could not be parsed")
 
     # Determine file type
     import os as _os
@@ -62,18 +66,22 @@ async def upload_document(
         chunk_count=len(chunks),
     )
 
-    # Save chunks
+    # Save chunks to PostgreSQL
     await svc.save_chunks(doc.id, chunks)
 
-    # Generate embeddings and store in vector store
+    # Generate embeddings and store in Milvus
     try:
-        import sys, os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
         from shared.rag import rag_service
-        await rag_service.index_document(doc.id, chunks)
+        await rag_service.index_document(
+            doc_id=doc.id,
+            chunks=chunks,
+            user_id=1,  # TODO: get from auth
+            file_type=file_type,
+            category=category or "",
+        )
+        logger.info(f"Document {doc.id} indexed: {len(chunks)} chunks")
     except Exception as e:
-        import logging
-        logging.warning(f"Embedding indexing failed (non-fatal): {e}")
+        logger.warning(f"Embedding indexing failed (non-fatal): {e}")
 
     return doc
 
@@ -99,17 +107,30 @@ async def get_document(doc_id: int, db: AsyncSession = Depends(get_db)):
 @router.delete("/{doc_id}")
 async def delete_document(doc_id: int, db: AsyncSession = Depends(get_db)):
     svc = KnowledgeService(db)
+
+    # 删除 Milvus 向量
+    try:
+        from shared.rag import rag_service
+        await rag_service.remove_document(doc_id)
+    except Exception as e:
+        logger.warning(f"Failed to remove vectors from Milvus: {e}")
+
+    # 删除 PostgreSQL 记录
     await svc.delete_document(doc_id)
     return {"message": "Document deleted"}
 
 
 @router.post("/search", response_model=SearchResponse)
-async def search_documents(req: SearchRequest, db: AsyncSession = Depends(get_db)):
-    try:
-        import sys, os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
-        from shared.rag import rag_service
-        results = await rag_service.search(req.query, top_k=req.top_k)
-        return SearchResponse(results=results, query=req.query, total=len(results))
-    except Exception as e:
-        return SearchResponse(results=[], query=req.query, total=0)
+async def search_documents(
+    req: SearchRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """语义搜索知识库"""
+    from shared.rag import rag_service
+    results = await rag_service.search(
+        query=req.query,
+        top_k=req.top_k,
+        user_id=1,  # TODO: get from auth
+        category=req.category,
+    )
+    return SearchResponse(results=results, query=req.query, total=len(results))

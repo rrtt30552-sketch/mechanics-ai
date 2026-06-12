@@ -10,14 +10,8 @@ from app.models.chat import Conversation, Message
 from app.schemas.chat import ConversationCreate
 from app.services.llm_client import llm_client
 
-# Import RAG service
-try:
-    import sys, os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
-    from shared.rag import rag_service
-    RAG_AVAILABLE = True
-except ImportError:
-    RAG_AVAILABLE = False
+# RAG 服务
+from shared.rag import rag_service
 
 
 class ChatService:
@@ -69,6 +63,7 @@ class ChatService:
         return msg
 
     async def chat(self, user_id: int, message: str, conversation_id: Optional[int] = None) -> dict:
+        """非流式对话（带 RAG 检索）"""
         # Get or create conversation
         if conversation_id:
             conv = await self.get_conversation(conversation_id)
@@ -80,15 +75,15 @@ class ChatService:
 
         # Build history
         history_msgs = await self.get_history(conv.id, limit=20)
-        history = [{"role": m.role, "content": m.content} for m in history_msgs[:-1]]  # exclude current
+        history = [{"role": m.role, "content": m.content} for m in history_msgs[:-1]]
 
-        # RAG: retrieve relevant context from knowledge base
+        # RAG: 从知识库检索相关上下文
         context = None
-        if RAG_AVAILABLE:
-            try:
-                context = await rag_service.get_context(message, top_k=3)
-            except Exception:
-                pass  # RAG failure is non-fatal
+        try:
+            context = await rag_service.get_context(message, top_k=3, user_id=user_id)
+        except Exception as e:
+            import logging
+            logging.warning(f"RAG retrieval failed (non-fatal): {e}")
 
         # Call LLM with context
         messages = llm_client.build_messages(message, history=history, context=context)
@@ -101,4 +96,5 @@ class ChatService:
             "reply": reply,
             "conversation_id": conv.id,
             "message_id": assistant_msg.id,
+            "has_context": context is not None,
         }

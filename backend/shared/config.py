@@ -25,12 +25,13 @@ class Settings(BaseSettings):
     MINIO_SECRET_KEY: str = "minioadmin"
     MINIO_BUCKET: str = "mech-ai"
 
-    # DeepSeek / AI
+    # DeepSeek API
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
 
-    # Embedding
-    EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    # Embedding — 使用 DeepSeek embedding 模型
+    EMBEDDING_MODEL: str = "deepseek-embedding"
+    EMBEDDING_DIM: int = 1536
 
     class Config:
         env_file = ".env"

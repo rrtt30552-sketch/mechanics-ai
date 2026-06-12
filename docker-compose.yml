@@ -38,18 +38,6 @@ services:
     volumes:
       - milvus_data:/var/lib/milvus
 
-  elasticsearch:
-    image: elasticsearch:8.11.1
-    container_name: mech-es
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-    ports:
-      - "9200:9200"
-    volumes:
-      - es_data:/usr/share/elasticsearch/data
-
   minio:
     image: minio/minio
     container_name: mech-minio
@@ -76,6 +64,10 @@ services:
     environment:
       DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/mech_ai"
       REDIS_URL: "redis://redis:6379/0"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY}"
+      DEEPSEEK_BASE_URL: "${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}"
+      MILVUS_HOST: "milvus-standalone"
+      MILVUS_PORT: "19530"
     depends_on:
       - postgres
       - redis
@@ -91,12 +83,15 @@ services:
       - "8002:8002"
     environment:
       DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/mech_ai"
+      REDIS_URL: "redis://redis:6379/0"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY}"
+      DEEPSEEK_BASE_URL: "${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}"
       MILVUS_HOST: "milvus-standalone"
-      MINIO_ENDPOINT: "minio:9000"
+      MILVUS_PORT: "19530"
     depends_on:
       - postgres
+      - redis
       - milvus-standalone
-      - minio
 
   agent-service:
     build:
@@ -109,10 +104,15 @@ services:
       - "8003:8003"
     environment:
       DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/mech_ai"
-      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      REDIS_URL: "redis://redis:6379/0"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY}"
       DEEPSEEK_BASE_URL: "${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}"
+      MILVUS_HOST: "milvus-standalone"
+      MILVUS_PORT: "19530"
     depends_on:
       - postgres
+      - redis
+      - milvus-standalone
 
   # ========== Frontend ==========
   frontend:
@@ -123,7 +123,10 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: "http://localhost/api"
+      - NEXT_PUBLIC_API_URL=http://localhost
+    depends_on:
+      - agent-service
+      - knowledge-service
 
   # ========== Nginx ==========
   nginx:
@@ -132,16 +135,15 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
+      - frontend
       - user-service
       - knowledge-service
       - agent-service
-      - frontend
 
 volumes:
   pg_data:
   redis_data:
   milvus_data:
-  es_data:
   minio_data:
