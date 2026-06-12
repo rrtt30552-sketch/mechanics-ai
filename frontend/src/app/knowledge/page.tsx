@@ -34,7 +34,7 @@ export default function KnowledgePage() {
   const fetchDocuments = async () => {
     const token = getToken();
     try {
-      const res = await fetch('/api/documents/', {
+      const res = await fetch('http://localhost:8000/api/documents/', {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (res.status === 401) {
@@ -63,7 +63,7 @@ export default function KnowledgePage() {
       formData.append('title', file.name);
 
       try {
-        const res = await fetch('/api/documents/upload', {
+        const res = await fetch('http://localhost:8000/api/documents/upload', {
           method: 'POST',
           headers: token ? { Authorization: `Bearer ${token}` } : {},
           body: formData,
@@ -85,7 +85,7 @@ export default function KnowledgePage() {
     if (!confirm('确定要删除这个文档吗？')) return;
     const token = getToken();
     try {
-      const res = await fetch(`/api/documents/${docId}`, {
+      const res = await fetch(`http://localhost:8000/api/documents/${docId}`, {
         method: 'DELETE',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });

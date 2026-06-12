@@ -46,7 +46,7 @@ export default function ChatPage() {
     const token = getToken();
     if (!token) return;
     try {
-      const res = await fetch('/api/chat/conversations', {
+      const res = await fetch('http://localhost:8000/api/chat/conversations', {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -74,7 +74,7 @@ export default function ChatPage() {
     abortRef.current = controller;
 
     try {
-      const res = await fetch('/api/chat/stream', {
+      const res = await fetch('http://localhost:8000/api/chat/stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -1,19 +1,18 @@
 /**
- * API 客户端 — 自动带 JWT token，处理 401 跳转登录
+ * API 客户端 — 直连后端 (localhost:8000)
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
-
-interface FetchOptions extends RequestInit {
-  noAuth?: boolean;
-}
+// 开发环境直连后端，生产环境走 nginx
+const API_BASE = typeof window !== 'undefined'
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
+  : 'http://localhost:8000';
 
 function getToken(): string | null {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('token');
 }
 
-export async function apiFetch(path: string, options: FetchOptions = {}) {
+export async function apiFetch(path: string, options: RequestInit & { noAuth?: boolean } = {}) {
   const { noAuth, headers: customHeaders, ...rest } = options;
 
   const headers: Record<string, string> = {
@@ -55,21 +54,4 @@ export async function apiPost<T = any>(path: string, body: any): Promise<T> {
     throw new Error(err.detail || `POST ${path} failed`);
   }
   return res.json();
-}
-
-export async function apiUpload<T = any>(path: string, formData: FormData): Promise<T> {
-  const res = await apiFetch(path, {
-    method: 'POST',
-    body: formData,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Upload failed' }));
-    throw new Error(err.detail || `Upload failed`);
-  }
-  return res.json();
-}
-
-export async function apiDelete(path: string): Promise<void> {
-  const res = await apiFetch(path, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`DELETE ${path} failed`);
 }
