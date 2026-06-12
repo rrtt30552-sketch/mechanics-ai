@@ -24,41 +24,27 @@ mech-ai/
 └── .env.example              # 环境变量模板
 ```
 
-## 🚀 快速开始
+## 🚀 一键启动
 
-### 1. 环境准备
+**前置要求：** Python 3.8+ 和 Node.js 16+
 
 ```bash
-cp .env.example .env
-# 编辑 .env 填入你的 DEEPSEEK_API_KEY
+# 克隆仓库
+git clone -b dev https://github.com/rrtt30552-sketch/mechanics-ai.git
+cd mechanics-ai
+
+# 一键启动！
+./start.sh
 ```
 
-### 2. Docker Compose 启动
+启动后自动打开 http://localhost:3000 即可使用。
 
+**其他命令：**
 ```bash
-docker-compose up -d
-```
-
-启动后访问：
-- 前端：http://localhost:3000
-- 用户服务：http://localhost:8001/docs
-- 知识服务：http://localhost:8002/docs
-- 对话服务：http://localhost:8003/docs
-- MinIO 控制台：http://localhost:9001
-
-### 3. 本地开发
-
-```bash
-# 后端
-cd backend
-pip install -r shared/requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
-export PYTHONPATH=$(pwd)
-uvicorn user-service.main:app --port 8001 --reload
-
-# 前端
-cd frontend
-npm install
-npm run dev
+make start    # 启动
+make stop     # 停止
+make restart  # 重启
+make status   # 查看状态
 ```
 
 ## 📦 核心功能
@@ -67,10 +53,10 @@ npm run dev
 |------|------|------|
 | 用户管理 | ✅ | 注册/登录/JWT/RBAC |
 | 文档知识库 | ✅ | PDF/Word/Excel/PPT 解析、上传、检索 |
-| AI 问答 | ✅ | DeepSeek 对话、多轮记忆 |
-| RAG 检索 | 🔨 | 向量检索 + rerank |
-| 学习辅助 | 📋 | 课程辅导、习题生成、考研辅导 |
-| 工程辅助 | 📋 | 设计建议、选型、BOM、DFMA/FMEA |
+| AI 问答 | ✅ | DeepSeek 对话、SSE 流式、多轮记忆 |
+| RAG 检索 | ✅ | TF-IDF 本地向量检索 |
+| 学习辅助 | ✅ | 课程辅导、习题生成、考研辅导、错题分析 |
+| 工程辅助 | ✅ | 设计建议、选型计算、BOM、工艺路线、DFMA、FMEA |
 | 故障诊断 | 📋 | 故障分析、维修方案 |
 
 ## 🛠️ 技术栈

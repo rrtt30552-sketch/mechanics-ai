@@ -1,55 +1,30 @@
-.PHONY: dev dev-docker stop logs init-db test help
+.PHONY: start stop restart status help
 
 help: ## 显示帮助
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
-# ===== 本地开发 =====
+start: ## 🚀 一键启动 MechAI (后端 + 前端)
+	@bash start.sh
 
-dev: ## 启动本地开发环境（数据库容器 + 后端/前端本地运行）
-	@echo "🔧 启动数据库容器..."
-	docker compose up -d postgres redis milvus-standalone minio
-	@echo "⏳ 等待数据库就绪..."
-	sleep 3
-	@echo "✅ 数据库已启动"
-	@echo ""
-	@echo "请在另一个终端运行以下命令启动后端服务:"
-	@echo "  cd backend && export PYTHONPATH=\$$(pwd)"
-	@echo "  uvicorn user-service.main:app --port 8001 --reload &"
-	@echo "  uvicorn knowledge-service.main:app --port 8002 --reload &"
-	@echo "  uvicorn agent-service.main:app --port 8003 --reload &"
-	@echo ""
-	@echo "请在另一个终端运行以下命令启动前端:"
-	@echo "  cd frontend && npm install && npm run dev"
-	@echo ""
-	@echo "访问: http://localhost:3000"
+stop: ## 🛑 停止所有服务
+	@bash stop.sh
 
-dev-docker: ## Docker Compose 全部启动
-	docker compose up -d --build
-	@echo "✅ 所有服务已启动"
-	@echo "   前端: http://localhost:3000"
-	@echo "   用户服务: http://localhost:8001/docs"
-	@echo "   知识服务: http://localhost:8002/docs"
-	@echo "   对话服务: http://localhost:8003/docs"
-	@echo "   MinIO: http://localhost:9001"
+restart: ## 🔄 重启所有服务
+	@bash stop.sh
+	@sleep 1
+	@bash start.sh
 
-stop: ## 停止所有容器
-	docker compose down
+status: ## 📊 查看服务状态
+	@echo "MechAI 服务状态:"
+	@curl -s http://localhost:8000/health 2>/dev/null && echo "  ✓ 后端运行中 (port 8000)" || echo "  ✗ 后端未运行"
+	@curl -s http://localhost:3000 > /dev/null 2>&1 && echo "  ✓ 前端运行中 (port 3000)" || echo "  ✗ 前端未运行"
 
-logs: ## 查看容器日志
-	docker compose logs -f --tail=50
+dev-backend: ## 🔧 仅启动后端
+	python3 server.py
 
-# ===== 数据库 =====
+dev-frontend: ## 🎨 仅启动前端
+	cd frontend && npm run dev
 
-init-db: ## 初始化数据库表
-	@echo "创建数据库表..."
-	cd backend && python ../scripts/init_db.py
-
-# ===== 测试 =====
-
-test: ## 运行 RAG 测试
-	python test_rag.py
-
-# ===== 环境 =====
-
-env: ## 复制 .env.example 到 .env
-	@if [ -f .env ]; then echo "⚠️  .env 已存在，跳过"; else cp .env.example .env && echo "✅ 已创建 .env，请编辑填入 DEEPSEEK_API_KEY"; fi
+install: ## 📦 安装所有依赖
+	pip install --break-system-packages fastapi uvicorn httpx numpy python-jose passlib bcrypt python-multipart sqlalchemy PyPDF2 python-docx openpyxl python-pptx
+	cd frontend && npm install
