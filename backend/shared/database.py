@@ -1,18 +1,14 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
+"""
+Database - SQLAlchemy async engine & session
+"""
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import DeclarativeBase
+import os
 
-from .config import get_settings
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/mech_ai")
 
-settings = get_settings()
-
-# Sync engine (for migrations)
-engine = create_engine(settings.DATABASE_URL_SYNC, echo=False)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Async engine
-async_engine = create_async_engine(settings.DATABASE_URL, echo=False, pool_size=20, max_overflow=10)
-AsyncSessionLocal = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+engine = create_async_engine(DATABASE_URL, echo=False)
+async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 class Base(DeclarativeBase):
@@ -20,8 +16,14 @@ class Base(DeclarativeBase):
 
 
 async def get_db():
-    async with AsyncSessionLocal() as session:
+    async with async_session() as session:
         try:
             yield session
         finally:
             await session.close()
+
+
+async def init_db():
+    """Create all tables"""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
