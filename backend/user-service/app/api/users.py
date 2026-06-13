@@ -1,70 +1,74 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from sqlalchemy import select
+from pydantic import BaseModel
+from typing import Optional
+import hashlib
 
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from shared.database import get_db
-from shared.security import verify_token
-from shared.exceptions import UnauthorizedException
-
-from app.schemas.user import UserCreate, UserUpdate, UserResponse, Token, LoginRequest
-from app.services.user_service import UserService
+from shared.security import create_access_token, get_current_user
+from app.models.user import User
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
 
-async def get_current_user(token: str = Depends(lambda: None), db: AsyncSession = Depends(get_db)):
-    """Dependency to get current authenticated user."""
-    from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-    # This is a simplified version - see auth middleware below
-    pass
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode()).hexdigest()
 
 
-@router.post("/register", response_model=UserResponse)
-async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
-    svc = UserService(db)
-    user = await svc.create_user(data)
-    return user
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+    email: Optional[str] = None
 
 
-@router.post("/login", response_model=Token)
-async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
-    svc = UserService(db)
-    return await svc.authenticate(data.username, data.password)
+@router.post("/register")
+async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    """用户注册"""
+    # Check if username exists
+    result = await db.execute(select(User).where(User.username == req.username))
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="用户名已存在")
+
+    # Check email
+    if req.email:
+        result = await db.execute(select(User).where(User.email == req.email))
+        if result.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="邮箱已被注册")
+
+    user = User(
+        username=req.username,
+        email=req.email,
+        hashed_password=hash_password(req.password),
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    return {"id": user.id, "username": user.username, "message": "注册成功"}
 
 
-@router.get("/me", response_model=UserResponse)
-async def get_me(db: AsyncSession = Depends(get_db), authorization: str = ""):
-    if not authorization.startswith("Bearer "):
-        raise UnauthorizedException()
-    payload = verify_token(authorization[7:])
-    if not payload:
-        raise UnauthorizedException()
-    svc = UserService(db)
-    return await svc.get_user(int(payload["sub"]))
+@router.post("/login")
+async def login(form: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
+    """用户登录（OAuth2 form）"""
+    result = await db.execute(select(User).where(User.username == form.username))
+    user = result.scalar_one_or_none()
+
+    if not user or user.hashed_password != hash_password(form.password):
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+    token = create_access_token(user.id, user.username)
+    return {"access_token": token, "token_type": "bearer"}
 
 
-@router.get("/", response_model=List[UserResponse])
-async def list_users(skip: int = 0, limit: int = 20, db: AsyncSession = Depends(get_db)):
-    svc = UserService(db)
-    return await svc.list_users(skip, limit)
-
-
-@router.get("/{user_id}", response_model=UserResponse)
-async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
-    svc = UserService(db)
-    return await svc.get_user(user_id)
-
-
-@router.put("/{user_id}", response_model=UserResponse)
-async def update_user(user_id: int, data: UserUpdate, db: AsyncSession = Depends(get_db)):
-    svc = UserService(db)
-    return await svc.update_user(user_id, data)
-
-
-@router.delete("/{user_id}")
-async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
-    svc = UserService(db)
-    await svc.delete_user(user_id)
-    return {"message": "User deactivated"}
+@router.get("/me")
+async def get_me(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """获取当前用户信息"""
+    result = await db.execute(select(User).where(User.id == user.id))
+    u = result.scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return {"id": u.id, "username": u.username, "email": u.email, "created_at": str(u.created_at)}
