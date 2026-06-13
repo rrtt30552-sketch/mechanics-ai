@@ -16,6 +16,13 @@ interface Conversation {
   updated_at: string;
 }
 
+interface ModelInfo {
+  key: string;
+  name: string;
+  description: string;
+  max_tokens: number;
+}
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8003';
 
 export default function ChatPage() {
@@ -25,17 +32,39 @@ export default function ChatPage() {
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [token, setToken] = useState<string>('');
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('deepseek');
+  const [showModelPicker, setShowModelPicker] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Load token from localStorage
+  // Load token
   useEffect(() => {
     const saved = localStorage.getItem('mechai_token');
     if (saved) setToken(saved);
+    const savedModel = localStorage.getItem('mechai_model');
+    if (savedModel) setSelectedModel(savedModel);
   }, []);
+
+  // Load models
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${API_BASE}/api/chat/models`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => {
+        setModels(data);
+        // If saved model not in list, pick first available
+        if (data.length > 0 && !data.find((m: ModelInfo) => m.key === selectedModel)) {
+          setSelectedModel(data[0].key);
+        }
+      })
+      .catch(() => {});
+  }, [token]);
 
   // Load conversation list
   const loadConversations = useCallback(async () => {
@@ -44,12 +73,8 @@ export default function ChatPage() {
       const res = await fetch(`${API_BASE}/api/chat/conversations`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
-        setConversations(await res.json());
-      }
-    } catch (e) {
-      console.error('Failed to load conversations', e);
-    }
+      if (res.ok) setConversations(await res.json());
+    } catch {}
   }, [token]);
 
   useEffect(() => {
@@ -75,9 +100,13 @@ export default function ChatPage() {
         );
         setConversationId(convId);
       }
-    } catch (e) {
-      console.error('Failed to load messages', e);
-    }
+    } catch {}
+  };
+
+  const selectModel = (key: string) => {
+    setSelectedModel(key);
+    localStorage.setItem('mechai_model', key);
+    setShowModelPicker(false);
   };
 
   // Stream chat
@@ -95,7 +124,6 @@ export default function ChatPage() {
     setInput('');
     setLoading(true);
 
-    // Add placeholder for assistant reply
     const assistantId = `stream-${Date.now()}`;
     setMessages((prev) => [
       ...prev,
@@ -112,6 +140,7 @@ export default function ChatPage() {
         body: JSON.stringify({
           message: userInput,
           conversation_id: conversationId,
+          model: selectedModel,
         }),
       });
 
@@ -121,7 +150,6 @@ export default function ChatPage() {
       const decoder = new TextDecoder();
       let buffer = '';
       let fullContent = '';
-      let newConvId = conversationId;
 
       if (reader) {
         while (true) {
@@ -140,7 +168,6 @@ export default function ChatPage() {
             try {
               const parsed = JSON.parse(data);
               if (parsed.conversation_id && !conversationId) {
-                newConvId = parsed.conversation_id;
                 setConversationId(parsed.conversation_id);
               }
               if (parsed.chunk) {
@@ -151,20 +178,17 @@ export default function ChatPage() {
                   )
                 );
               }
-            } catch {
-              // skip malformed JSON
-            }
+            } catch {}
           }
         }
       }
 
-      // Refresh conversation list
       loadConversations();
     } catch (err) {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId
-            ? { ...m, content: '抱歉，请求出错了。请检查后端服务是否启动。' }
+            ? { ...m, content: '抱歉，请求出错了。请检查后端服务是否启动，以及 API Key 是否配置正确。' }
             : m
         )
       );
@@ -185,7 +209,8 @@ export default function ChatPage() {
     setConversationId(null);
   };
 
-  // If no token, show login prompt
+  const currentModel = models.find((m) => m.key === selectedModel);
+
   if (!token) {
     return (
       <div className="flex h-screen bg-slate-50 items-center justify-center">
@@ -193,10 +218,7 @@ export default function ChatPage() {
           <div className="text-6xl mb-4">🔒</div>
           <h2 className="text-2xl font-bold text-slate-900 mb-3">请先登录</h2>
           <p className="text-slate-600 mb-6">登录后才能使用 AI 对话功能</p>
-          <Link
-            href="/login"
-            className="bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700 transition-colors font-medium"
-          >
+          <Link href="/login" className="bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700 transition-colors font-medium">
             去登录 →
           </Link>
         </div>
@@ -229,9 +251,7 @@ export default function ChatPage() {
               <button
                 key={c.id}
                 className={`w-full text-left text-sm px-3 py-2.5 rounded-lg transition-colors truncate ${
-                  c.id === conversationId
-                    ? 'bg-blue-600/30 text-blue-200'
-                    : 'text-slate-300 hover:bg-slate-800'
+                  c.id === conversationId ? 'bg-blue-600/30 text-blue-200' : 'text-slate-300 hover:bg-slate-800'
                 }`}
                 onClick={() => loadMessages(c.id)}
               >
@@ -241,15 +261,9 @@ export default function ChatPage() {
           )}
         </div>
         <div className="p-4 border-t border-slate-700 space-y-1">
-          <Link href="/knowledge" className="flex items-center gap-2 text-slate-300 hover:text-white text-sm py-2">
-            📚 知识库管理
-          </Link>
-          <Link href="/learning" className="flex items-center gap-2 text-slate-300 hover:text-white text-sm py-2">
-            📖 学习辅助
-          </Link>
-          <Link href="/engineering" className="flex items-center gap-2 text-slate-300 hover:text-white text-sm py-2">
-            ⚙️ 工程辅助
-          </Link>
+          <Link href="/knowledge" className="flex items-center gap-2 text-slate-300 hover:text-white text-sm py-2">📚 知识库管理</Link>
+          <Link href="/learning" className="flex items-center gap-2 text-slate-300 hover:text-white text-sm py-2">📖 学习辅助</Link>
+          <Link href="/engineering" className="flex items-center gap-2 text-slate-300 hover:text-white text-sm py-2">⚙️ 工程辅助</Link>
         </div>
       </aside>
 
@@ -262,8 +276,53 @@ export default function ChatPage() {
           <button onClick={startNewChat} className="text-blue-600 text-sm">新对话</button>
         </header>
 
+        {/* Model Selector Bar */}
+        <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3">
+          <span className="text-xs text-slate-500">模型:</span>
+          <div className="relative">
+            <button
+              onClick={() => setShowModelPicker(!showModelPicker)}
+              className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg text-sm transition-colors"
+            >
+              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+              <span className="font-medium text-slate-700">{currentModel?.name || selectedModel}</span>
+              <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {showModelPicker && (
+              <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 w-72 py-1">
+                {models.length === 0 ? (
+                  <div className="px-4 py-3 text-sm text-slate-500">暂无可用模型，请配置 API Key</div>
+                ) : (
+                  models.map((m) => (
+                    <button
+                      key={m.key}
+                      onClick={() => selectModel(m.key)}
+                      className={`w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors flex items-start gap-3 ${
+                        m.key === selectedModel ? 'bg-blue-50' : ''
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
+                        m.key === selectedModel ? 'bg-blue-500' : 'bg-slate-300'
+                      }`}></span>
+                      <div>
+                        <div className="font-medium text-slate-800 text-sm">{m.name}</div>
+                        <div className="text-xs text-slate-500">{m.description}</div>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+          {currentModel && (
+            <span className="text-xs text-slate-400 hidden sm:inline">{currentModel.description}</span>
+          )}
+        </div>
+
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto" onClick={() => setShowModelPicker(false)}>
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-4">
               <div className="text-6xl mb-6">🤖</div>
@@ -281,7 +340,7 @@ export default function ChatPage() {
                   <button
                     key={q}
                     className="text-left bg-white border border-slate-200 rounded-xl p-3 text-sm text-slate-700 hover:border-blue-300 hover:bg-blue-50 transition-all"
-                    onClick={() => { setInput(q); }}
+                    onClick={() => setInput(q)}
                   >
                     {q}
                   </button>
@@ -315,20 +374,6 @@ export default function ChatPage() {
                   )}
                 </div>
               ))}
-              {loading && messages[messages.length - 1]?.role !== 'assistant' && (
-                <div className="flex gap-4">
-                  <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white text-sm font-bold">
-                    AI
-                  </div>
-                  <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3">
-                    <div className="flex gap-1">
-                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                    </div>
-                  </div>
-                </div>
-              )}
               <div ref={messagesEndRef} />
             </div>
           )}
@@ -352,11 +397,11 @@ export default function ChatPage() {
                 onClick={sendMessage}
                 disabled={loading || !input.trim()}
               >
-                发送
+                {loading ? '...' : '发送'}
               </button>
             </div>
             <p className="text-xs text-slate-400 mt-2 text-center">
-              MechAI 基于 RAG 架构，回答基于你的知识库内容生成。仅供参考。
+              当前: {currentModel?.name || selectedModel} · MechAI 基于 RAG 架构，回答仅供参考
             </p>
           </div>
         </div>
