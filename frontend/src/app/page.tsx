@@ -73,6 +73,9 @@ export default function Home() {
               <Link href="/engineering" className="text-slate-600 hover:text-blue-600 font-medium transition-colors">
                 工程
               </Link>
+              <Link href="/diagnosis" className="text-slate-600 hover:text-blue-600 font-medium transition-colors">
+                诊断
+              </Link>
               <Link
                 href="/login"
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
@@ -94,6 +97,7 @@ export default function Home() {
             <Link href="/knowledge" className="block py-2 text-slate-700">知识库</Link>
             <Link href="/learning" className="block py-2 text-slate-700">学习</Link>
             <Link href="/engineering" className="block py-2 text-slate-700">工程</Link>
+            <Link href="/diagnosis" className="block py-2 text-slate-700">诊断</Link>
             <Link href="/login" className="block py-2 text-blue-600 font-medium">登录</Link>
           </div>
         )}

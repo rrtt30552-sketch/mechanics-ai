@@ -18,14 +18,22 @@ export default function KnowledgePage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [token, setToken] = useState<string>('');
 
   useEffect(() => {
-    fetchDocuments();
+    const saved = localStorage.getItem('mechai_token');
+    if (saved) setToken(saved);
   }, []);
+
+  useEffect(() => {
+    if (token) fetchDocuments();
+  }, [token]);
 
   const fetchDocuments = async () => {
     try {
-      const res = await fetch('/api/documents/');
+      const res = await fetch('/api/documents/', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (res.ok) {
         const data = await res.json();
         setDocuments(data);
@@ -47,6 +55,7 @@ export default function KnowledgePage() {
       try {
         const res = await fetch('/api/documents/upload', {
           method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
           body: formData,
         });
         if (res.ok) {
@@ -57,6 +66,21 @@ export default function KnowledgePage() {
       }
     }
     setUploading(false);
+  };
+
+  const handleDelete = async (docId: number) => {
+    if (!confirm('确定要删除这个文档吗？')) return;
+    try {
+      const res = await fetch(`/api/documents/${docId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        await fetchDocuments();
+      }
+    } catch (err) {
+      console.error('Delete failed:', err);
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -193,7 +217,12 @@ export default function KnowledgePage() {
                       {new Date(doc.created_at).toLocaleDateString('zh-CN')}
                     </td>
                     <td className="px-6 py-4">
-                      <button className="text-red-500 hover:text-red-700 text-sm">删除</button>
+                      <button
+                        className="text-red-500 hover:text-red-700 text-sm"
+                        onClick={() => handleDelete(doc.id)}
+                      >
+                        删除
+                      </button>
                     </td>
                   </tr>
                 ))}

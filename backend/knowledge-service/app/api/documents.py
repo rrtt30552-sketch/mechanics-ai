@@ -24,6 +24,7 @@ async def upload_document(
     description: Optional[str] = Form(None),
     is_public: bool = Form(False),
     db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
 ):
     if not file.filename:
         raise BadRequestException("No file provided")
@@ -55,7 +56,7 @@ async def upload_document(
             description=description,
             is_public=is_public,
         ),
-        user_id=1,  # TODO: get from auth
+        user_id=user.id,
         file_path=file_path,
         file_type=file_type,
         file_size=file_size,
@@ -80,14 +81,14 @@ async def upload_document(
 
 @router.get("/", response_model=List[DocumentResponse])
 async def list_documents(
-    user_id: Optional[int] = None,
     category: Optional[str] = None,
     skip: int = 0,
     limit: int = 20,
     db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
 ):
     svc = KnowledgeService(db)
-    return await svc.list_documents(user_id, category, skip, limit)
+    return await svc.list_documents(user.id, category, skip, limit)
 
 
 @router.get("/{doc_id}", response_model=DocumentResponse)
@@ -97,9 +98,15 @@ async def get_document(doc_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/{doc_id}")
-async def delete_document(doc_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_document(doc_id: int, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
     svc = KnowledgeService(db)
     await svc.delete_document(doc_id)
+    # Also remove vector embeddings
+    try:
+        from shared.rag import rag_service
+        await rag_service.remove_document(doc_id)
+    except Exception:
+        pass
     return {"message": "Document deleted"}
 
 

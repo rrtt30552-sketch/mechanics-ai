@@ -264,6 +264,7 @@ export default function ChatPage() {
           <Link href="/knowledge" className="flex items-center gap-2 text-slate-300 hover:text-white text-sm py-2">📚 知识库管理</Link>
           <Link href="/learning" className="flex items-center gap-2 text-slate-300 hover:text-white text-sm py-2">📖 学习辅助</Link>
           <Link href="/engineering" className="flex items-center gap-2 text-slate-300 hover:text-white text-sm py-2">⚙️ 工程辅助</Link>
+          <Link href="/diagnosis" className="flex items-center gap-2 text-slate-300 hover:text-white text-sm py-2">🔍 故障诊断</Link>
         </div>
       </aside>
 

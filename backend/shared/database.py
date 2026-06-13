@@ -24,6 +24,10 @@ async def get_db():
 
 
 async def init_db():
-    """Create all tables"""
+    """Create all tables and initialize pgvector extension"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Initialize pgvector extension and embedding table
+    from shared.rag import init_vector_extension
+    await init_vector_extension(engine)

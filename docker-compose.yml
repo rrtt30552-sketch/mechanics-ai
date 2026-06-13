@@ -3,7 +3,7 @@ version: "3.9"
 services:
   # ========== Databases ==========
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: mech-postgres
     environment:
       POSTGRES_USER: postgres
@@ -85,6 +85,56 @@ services:
       DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/mech_ai"
       DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
       DEEPSEEK_BASE_URL: "${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}"
+      MIMO_API_KEY: "${MIMO_API_KEY:-}"
+      QWEN_API_KEY: "${QWEN_API_KEY:-}"
+    depends_on:
+      - postgres
+
+  learning-service:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.service
+    container_name: mech-learning-svc
+    command: uvicorn main:app --host 0.0.0.0 --port 8005 --reload
+    working_dir: /app/learning-service
+    ports:
+      - "8005:8005"
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/mech_ai"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      DEEPSEEK_BASE_URL: "${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}"
+    depends_on:
+      - postgres
+
+  engineering-service:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.service
+    container_name: mech-engineering-svc
+    command: uvicorn main:app --host 0.0.0.0 --port 8006 --reload
+    working_dir: /app/engineering-service
+    ports:
+      - "8006:8006"
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/mech_ai"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      DEEPSEEK_BASE_URL: "${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}"
+    depends_on:
+      - postgres
+
+  diagnosis-service:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.service
+    container_name: mech-diagnosis-svc
+    command: uvicorn main:app --host 0.0.0.0 --port 8007 --reload
+    working_dir: /app/diagnosis-service
+    ports:
+      - "8007:8007"
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/mech_ai"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      DEEPSEEK_BASE_URL: "${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}"
     depends_on:
       - postgres
 
@@ -111,6 +161,9 @@ services:
       - user-service
       - knowledge-service
       - agent-service
+      - learning-service
+      - engineering-service
+      - diagnosis-service
       - frontend
 
 volumes:
