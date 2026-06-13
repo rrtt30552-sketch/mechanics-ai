@@ -26,30 +26,6 @@ services:
     volumes:
       - redis_data:/data
 
-  milvus-standalone:
-    image: milvusdb/milvus:v2.3.4
-    container_name: mech-milvus
-    environment:
-      ETCD_USE_EMBED: "true"
-      COMMON_STORAGETYPE: local
-    ports:
-      - "19530:19530"
-      - "9091:9091"
-    volumes:
-      - milvus_data:/var/lib/milvus
-
-  elasticsearch:
-    image: elasticsearch:8.11.1
-    container_name: mech-es
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-    ports:
-      - "9200:9200"
-    volumes:
-      - es_data:/usr/share/elasticsearch/data
-
   minio:
     image: minio/minio
     container_name: mech-minio
@@ -91,11 +67,9 @@ services:
       - "8002:8002"
     environment:
       DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/mech_ai"
-      MILVUS_HOST: "milvus-standalone"
       MINIO_ENDPOINT: "minio:9000"
     depends_on:
       - postgres
-      - milvus-standalone
       - minio
 
   agent-service:
@@ -142,6 +116,4 @@ services:
 volumes:
   pg_data:
   redis_data:
-  milvus_data:
-  es_data:
   minio_data:
