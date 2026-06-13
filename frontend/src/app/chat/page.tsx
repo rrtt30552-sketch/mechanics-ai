@@ -1,28 +1,88 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 
 interface Message {
-  id: number;
+  id: number | string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
 }
+
+interface Conversation {
+  id: number;
+  title: string;
+  updated_at: string;
+}
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8003';
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState<number | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [token, setToken] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Load token from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('mechai_token');
+    if (saved) setToken(saved);
+  }, []);
+
+  // Load conversation list
+  const loadConversations = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/conversations`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setConversations(await res.json());
+      }
+    } catch (e) {
+      console.error('Failed to load conversations', e);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    loadConversations();
+  }, [loadConversations]);
+
+  // Load messages for a conversation
+  const loadMessages = async (convId: number) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/conversations/${convId}/messages`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(
+          data.map((m: any) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            timestamp: new Date(m.created_at),
+          }))
+        );
+        setConversationId(convId);
+      }
+    } catch (e) {
+      console.error('Failed to load messages', e);
+    }
+  };
+
+  // Stream chat
   const sendMessage = async () => {
-    if (!input.trim() || loading) return;
+    if (!input.trim() || loading || !token) return;
 
     const userMsg: Message = {
       id: Date.now(),
@@ -31,39 +91,83 @@ export default function ChatPage() {
       timestamp: new Date(),
     };
     setMessages((prev) => [...prev, userMsg]);
+    const userInput = input.trim();
     setInput('');
     setLoading(true);
 
+    // Add placeholder for assistant reply
+    const assistantId = `stream-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      { id: assistantId, role: 'assistant', content: '', timestamp: new Date() },
+    ]);
+
     try {
-      const res = await fetch('/api/chat/', {
+      const res = await fetch(`${API_BASE}/api/chat/stream`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
-          message: userMsg.content,
+          message: userInput,
           conversation_id: conversationId,
         }),
       });
 
       if (!res.ok) throw new Error('请求失败');
 
-      const data = await res.json();
-      setConversationId(data.conversation_id);
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullContent = '';
+      let newConvId = conversationId;
 
-      const assistantMsg: Message = {
-        id: data.message_id,
-        role: 'assistant',
-        content: data.reply,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const data = line.slice(6).trim();
+            if (data === '[DONE]') continue;
+
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.conversation_id && !conversationId) {
+                newConvId = parsed.conversation_id;
+                setConversationId(parsed.conversation_id);
+              }
+              if (parsed.chunk) {
+                fullContent += parsed.chunk;
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId ? { ...m, content: fullContent } : m
+                  )
+                );
+              }
+            } catch {
+              // skip malformed JSON
+            }
+          }
+        }
+      }
+
+      // Refresh conversation list
+      loadConversations();
     } catch (err) {
-      const errMsg: Message = {
-        id: Date.now() + 1,
-        role: 'assistant',
-        content: '抱歉，请求出错了。请检查后端服务是否启动。',
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errMsg]);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? { ...m, content: '抱歉，请求出错了。请检查后端服务是否启动。' }
+            : m
+        )
+      );
     } finally {
       setLoading(false);
     }
@@ -75,6 +179,30 @@ export default function ChatPage() {
       sendMessage();
     }
   };
+
+  const startNewChat = () => {
+    setMessages([]);
+    setConversationId(null);
+  };
+
+  // If no token, show login prompt
+  if (!token) {
+    return (
+      <div className="flex h-screen bg-slate-50 items-center justify-center">
+        <div className="text-center">
+          <div className="text-6xl mb-4">🔒</div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-3">请先登录</h2>
+          <p className="text-slate-600 mb-6">登录后才能使用 AI 对话功能</p>
+          <Link
+            href="/login"
+            className="bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700 transition-colors font-medium"
+          >
+            去登录 →
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-slate-50">
@@ -88,19 +216,31 @@ export default function ChatPage() {
         </div>
         <button
           className="m-4 bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-lg font-medium transition-colors"
-          onClick={() => {
-            setMessages([]);
-            setConversationId(null);
-          }}
+          onClick={startNewChat}
         >
           + 新对话
         </button>
         <div className="flex-1 overflow-y-auto px-3 space-y-1">
           <div className="text-xs text-slate-500 uppercase tracking-wider px-2 py-2">历史对话</div>
-          {/* TODO: load conversation list */}
-          <div className="text-sm text-slate-400 px-2 py-3">暂无历史对话</div>
+          {conversations.length === 0 ? (
+            <div className="text-sm text-slate-400 px-2 py-3">暂无历史对话</div>
+          ) : (
+            conversations.map((c) => (
+              <button
+                key={c.id}
+                className={`w-full text-left text-sm px-3 py-2.5 rounded-lg transition-colors truncate ${
+                  c.id === conversationId
+                    ? 'bg-blue-600/30 text-blue-200'
+                    : 'text-slate-300 hover:bg-slate-800'
+                }`}
+                onClick={() => loadMessages(c.id)}
+              >
+                {c.title}
+              </button>
+            ))
+          )}
         </div>
-        <div className="p-4 border-t border-slate-700">
+        <div className="p-4 border-t border-slate-700 space-y-1">
           <Link href="/knowledge" className="flex items-center gap-2 text-slate-300 hover:text-white text-sm py-2">
             📚 知识库管理
           </Link>
@@ -119,7 +259,7 @@ export default function ChatPage() {
         <header className="md:hidden bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between">
           <Link href="/" className="text-slate-600">← 返回</Link>
           <span className="font-bold text-slate-900">MechAI 对话</span>
-          <div className="w-8"></div>
+          <button onClick={startNewChat} className="text-blue-600 text-sm">新对话</button>
         </header>
 
         {/* Messages */}
@@ -164,8 +304,8 @@ export default function ChatPage() {
                         : 'bg-white border border-slate-200 text-slate-800'
                     }`}
                   >
-                    <div className="markdown-body whitespace-pre-wrap text-sm leading-relaxed">
-                      {msg.content}
+                    <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                      {msg.content || (loading && msg.role === 'assistant' ? '思考中...' : '')}
                     </div>
                   </div>
                   {msg.role === 'user' && (
@@ -175,7 +315,7 @@ export default function ChatPage() {
                   )}
                 </div>
               ))}
-              {loading && (
+              {loading && messages[messages.length - 1]?.role !== 'assistant' && (
                 <div className="flex gap-4">
                   <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white text-sm font-bold">
                     AI
