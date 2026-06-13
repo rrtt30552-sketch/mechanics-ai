@@ -23,7 +23,7 @@ interface ModelInfo {
   max_tokens: number;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8003';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);

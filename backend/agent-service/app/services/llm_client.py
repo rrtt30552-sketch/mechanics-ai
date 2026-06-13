@@ -35,16 +35,16 @@ def get_available_models() -> dict[str, ModelProvider]:
         models["mimo"] = ModelProvider(
             name="MiMo",
             model_id="mimo-v2-pro",
-            base_url=os.getenv("MIMO_BASE_URL", "https://api.mimo.ai/v1"),
+            base_url=os.getenv("MIMO_BASE_URL", "https://api.xiaomimimo.com/v1"),
             api_key=mimo_key,
             max_tokens=4096,
             description="小米 MiMo 大模型",
         )
-        # MiMo 可能有多个版本
-        models["mimo-lite"] = ModelProvider(
-            name="MiMo Lite",
-            model_id="mimo-v2-lite",
-            base_url=os.getenv("MIMO_BASE_URL", "https://api.mimo.ai/v1"),
+        # MiMo 轻量版
+        models["mimo-flash"] = ModelProvider(
+            name="MiMo Flash",
+            model_id="mimo-v2-flash",
+            base_url=os.getenv("MIMO_BASE_URL", "https://api.xiaomimimo.com/v1"),
             api_key=mimo_key,
             max_tokens=2048,
             description="小米 MiMo 轻量版，更快",
