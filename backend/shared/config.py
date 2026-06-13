@@ -1,40 +1,19 @@
-from pydantic_settings import BaseSettings
+"""
+Configuration - Environment variables
+"""
+import os
 from functools import lru_cache
 
 
-class Settings(BaseSettings):
-    # Database
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/mech_ai"
-    DATABASE_URL_SYNC: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/mech_ai"
-
-    # Redis
-    REDIS_URL: str = "redis://localhost:6379/0"
-
-    # JWT
-    SECRET_KEY: str = "mech-ai-platform-secret-key-change-in-production"
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
-
-    # Milvus
-    MILVUS_HOST: str = "localhost"
-    MILVUS_PORT: int = 19530
-
-    # MinIO
-    MINIO_ENDPOINT: str = "localhost:9000"
-    MINIO_ACCESS_KEY: str = "minioadmin"
-    MINIO_SECRET_KEY: str = "minioadmin"
-    MINIO_BUCKET: str = "mech-ai"
-
-    # DeepSeek / AI
-    DEEPSEEK_API_KEY: str = ""
-    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
-
-    # Embedding
-    EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
-
-    class Config:
-        env_file = ".env"
-        extra = "allow"
+class Settings:
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/mech_ai")
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
+    DEEPSEEK_BASE_URL: str = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+    JWT_SECRET: str = os.getenv("JWT_SECRET", "mechai-dev-secret-change-in-production")
+    MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+    MINIO_ACCESS_KEY: str = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+    MINIO_SECRET_KEY: str = os.getenv("MINIO_SECRET_KEY", "minioadmin")
 
 
 @lru_cache()
