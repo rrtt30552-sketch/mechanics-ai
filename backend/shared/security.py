@@ -1,32 +1,46 @@
-from datetime import datetime, timedelta, timezone
-from typing import Optional
-from jose import jwt, JWTError
-from passlib.context import CryptContext
+"""
+Security - JWT authentication
+"""
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import jwt
+import os
+from datetime import datetime, timedelta
 
-from .config import get_settings
+SECRET_KEY = os.getenv("JWT_SECRET", "mechai-dev-secret-change-in-production")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_HOURS = 72
 
-settings = get_settings()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+security = HTTPBearer()
 
 
-def verify_token(token: str) -> Optional[dict]:
+def create_access_token(user_id: int, username: str) -> str:
+    expire = datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+    payload = {
+        "sub": str(user_id),
+        "username": username,
+        "exp": expire,
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_token(token: str) -> dict:
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        return payload
-    except JWTError:
-        return None
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Extract user from JWT token"""
+    payload = decode_token(credentials.credentials)
+    user_id = int(payload.get("sub", 0))
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    # Return a simple user object (services can query DB if needed)
+    return type("User", (), {
+        "id": user_id,
+        "username": payload.get("username", ""),
+    })()
