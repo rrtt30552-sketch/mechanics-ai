@@ -2,42 +2,77 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
 export default function LoginPage() {
+  const router = useRouter();
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [form, setForm] = useState({ username: '', password: '', email: '', full_name: '' });
-  const [loading, setLoading] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
+    setLoading(true);
 
     try {
-      const url = mode === 'login' ? '/api/users/login' : '/api/users/register';
-      const body = mode === 'login'
-        ? { username: form.username, password: form.password }
-        : { username: form.username, password: form.password, email: form.email, full_name: form.full_name };
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || '请求失败');
-      }
-
-      const data = await res.json();
       if (mode === 'login') {
-        localStorage.setItem('token', data.access_token);
-        window.location.href = '/chat';
+        // Try form-based login (OAuth2 style)
+        const formData = new URLSearchParams();
+        formData.append('username', username);
+        formData.append('password', password);
+
+        const res = await fetch(`${API_BASE}/api/users/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: formData,
+        });
+
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.detail || '登录失败');
+        }
+
+        const data = await res.json();
+        localStorage.setItem('mechai_token', data.access_token);
+        router.push('/chat');
       } else {
-        setMode('login');
-        setError('注册成功！请登录');
+        // Register
+        const res = await fetch(`${API_BASE}/api/users/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, email: email || undefined }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.detail || '注册失败');
+        }
+
+        // Auto-login after register
+        const formData = new URLSearchParams();
+        formData.append('username', username);
+        formData.append('password', password);
+
+        const loginRes = await fetch(`${API_BASE}/api/users/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: formData,
+        });
+
+        if (loginRes.ok) {
+          const data = await loginRes.json();
+          localStorage.setItem('mechai_token', data.access_token);
+          router.push('/chat');
+        } else {
+          setMode('login');
+          setError('注册成功，请登录');
+        }
       }
     } catch (err: any) {
       setError(err.message || '操作失败');
@@ -47,8 +82,9 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex items-center justify-center px-4">
+      <div className="w-full max-w-md">
+        {/* Header */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 mb-6">
             <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">
@@ -59,90 +95,84 @@ export default function LoginPage() {
           <h1 className="text-2xl font-bold text-slate-900">
             {mode === 'login' ? '登录' : '注册'}
           </h1>
-          <p className="text-slate-500 mt-1">
-            {mode === 'login' ? '欢迎回来' : '创建你的 MechAI 账号'}
+          <p className="text-slate-600 mt-2">
+            {mode === 'login' ? '欢迎回来！登录以使用 AI 助手' : '创建账号，开始使用 MechAI'}
           </p>
         </div>
 
-        {error && (
-          <div className={`mb-4 p-3 rounded-lg text-sm ${error.includes('成功') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-            {error}
-          </div>
-        )}
+        {/* Form */}
+        <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-8">
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">用户名</label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm"
+                placeholder="输入用户名"
+                required
+              />
+            </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">用户名</label>
-            <input
-              type="text"
-              className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              value={form.username}
-              onChange={(e) => setForm({ ...form, username: e.target.value })}
-              required
-            />
-          </div>
-
-          {mode === 'register' && (
-            <>
+            {mode === 'register' && (
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">邮箱</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">邮箱（可选）</label>
                 <input
                   type="email"
-                  className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm"
+                  placeholder="your@email.com"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">姓名</label>
-                <input
-                  type="text"
-                  className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  value={form.full_name}
-                  onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-                />
-              </div>
-            </>
-          )}
+            )}
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">密码</label>
-            <input
-              type="password"
-              className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-              required
-              minLength={6}
-            />
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">密码</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm"
+                placeholder="输入密码"
+                required
+                minLength={6}
+              />
+            </div>
+
+            {error && (
+              <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-lg">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-blue-600 text-white py-3 rounded-xl hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? '处理中...' : mode === 'login' ? '登录' : '注册'}
+            </button>
+          </form>
+
+          <div className="mt-6 text-center text-sm text-slate-600">
+            {mode === 'login' ? (
+              <>
+                还没有账号？{' '}
+                <button onClick={() => { setMode('register'); setError(''); }} className="text-blue-600 hover:underline font-medium">
+                  立即注册
+                </button>
+              </>
+            ) : (
+              <>
+                已有账号？{' '}
+                <button onClick={() => { setMode('login'); setError(''); }} className="text-blue-600 hover:underline font-medium">
+                  去登录
+                </button>
+              </>
+            )}
           </div>
-
-          <button
-            type="submit"
-            className="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
-            disabled={loading}
-          >
-            {loading ? '处理中...' : mode === 'login' ? '登录' : '注册'}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center text-sm text-slate-500">
-          {mode === 'login' ? (
-            <span>
-              没有账号？{' '}
-              <button className="text-blue-600 hover:underline font-medium" onClick={() => { setMode('register'); setError(''); }}>
-                注册
-              </button>
-            </span>
-          ) : (
-            <span>
-              已有账号？{' '}
-              <button className="text-blue-600 hover:underline font-medium" onClick={() => { setMode('login'); setError(''); }}>
-                登录
-              </button>
-            </span>
-          )}
         </div>
       </div>
     </div>
