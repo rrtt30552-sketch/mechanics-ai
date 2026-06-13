@@ -37,3 +37,4 @@ docker-compose.override.yml
 # Data
 *.db
 *.sqlite
+vectors.json
