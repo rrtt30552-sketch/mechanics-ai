@@ -18,13 +18,20 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[int] = None
+    model: Optional[str] = "deepseek"  # 模型选择
+
+
+@router.get("/models")
+async def list_models(user=Depends(get_current_user)):
+    """获取可用模型列表"""
+    return llm_client.list_models()
 
 
 @router.post("/")
 async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
     """普通对话（非流式）"""
     service = ChatService(db)
-    result = await service.chat(user.id, req.message, req.conversation_id)
+    result = await service.chat(user.id, req.message, req.conversation_id, model_key=req.model)
     return result
 
 
@@ -52,9 +59,12 @@ async def chat_stream(req: ChatRequest, db: AsyncSession = Depends(get_db), user
     # Build messages for LLM
     messages = llm_client.build_messages(req.message, history=history, context=context)
 
+    # Get model key
+    model_key = req.model or "deepseek"
+
     async def event_generator():
         full_reply = []
-        async for chunk in llm_client.chat_stream(messages):
+        async for chunk in llm_client.chat_stream(messages, model_key=model_key):
             full_reply.append(chunk)
             yield f"data: {json.dumps({'chunk': chunk, 'conversation_id': conv.id}, ensure_ascii=False)}\n\n"
 
