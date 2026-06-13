@@ -31,6 +31,6 @@ class DocumentChunk(Base):
     document_id = Column(Integer, ForeignKey("documents.id"), index=True, nullable=False)
     chunk_index = Column(Integer, nullable=False)
     content = Column(Text, nullable=False)
-    metadata = Column(JSON, default=dict)
+    metadata_ = Column("metadata", JSON, default=dict)
     vector_id = Column(String(100), nullable=True)  # Milvus vector ID
     created_at = Column(DateTime(timezone=True), server_default=func.now())

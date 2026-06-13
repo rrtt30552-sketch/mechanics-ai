@@ -1,30 +1,33 @@
 """
 RAG Service - 检索增强生成
-使用 PostgreSQL + pgvector 进行持久化向量存储与检索
+支持两种后端：
+  - PostgreSQL + pgvector（生产环境）
+  - JSON 文件存储（本地开发/测试）
 """
 from typing import List, Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text, delete
+import os
+import json
+import logging
 
-import sys, os
+import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from shared.embedding import embed_query, embed_texts
-from shared.config import get_settings
 
-settings = get_settings()
+logger = logging.getLogger(__name__)
 
 # Embedding 维度 (all-MiniLM-L6-v2 = 384)
 EMBEDDING_DIM = 384
 
+# 向量存储文件路径（本地模式）
+VECTORS_FILE = os.path.join(os.path.dirname(__file__), '..', '..', 'vectors.json')
+
 
 async def init_vector_extension(engine):
-    """启用 pgvector 扩展并创建向量表"""
+    """启用 pgvector 扩展并创建向量表（仅 PostgreSQL）"""
+    from sqlalchemy import text
     async with engine.begin() as conn:
-        # 启用 pgvector 扩展
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-
-        # 创建文档向量表（如果不存在）
         await conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS document_embeddings (
                 id SERIAL PRIMARY KEY,
@@ -35,37 +38,97 @@ async def init_vector_extension(engine):
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """))
-
-        # 创建 HNSW 索引加速检索（如果不存在）
         await conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_embeddings_hnsw
             ON document_embeddings
             USING hnsw (embedding vector_cosine_ops)
             WITH (m = 16, ef_construction = 64)
         """))
-
-        # 创建 document_id 索引
         await conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_embeddings_doc_id
             ON document_embeddings (document_id)
         """))
 
 
-class VectorStore:
+class FileVectorStore:
     """
-    PostgreSQL + pgvector 向量存储
-    数据持久化，支持高效的余弦相似度检索
+    JSON 文件向量存储 — 本地开发用
+    数据保存在 vectors.json，重启不丢失
+    """
+
+    def __init__(self):
+        self._vectors: List[dict] = []
+        self._load()
+
+    def _load(self):
+        if os.path.exists(VECTORS_FILE):
+            try:
+                with open(VECTORS_FILE, 'r', encoding='utf-8') as f:
+                    self._vectors = json.load(f)
+                logger.info(f"Loaded {len(self._vectors)} vectors from {VECTORS_FILE}")
+            except Exception as e:
+                logger.warning(f"Failed to load vectors file: {e}")
+                self._vectors = []
+        else:
+            self._vectors = []
+
+    def _save(self):
+        try:
+            with open(VECTORS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(self._vectors, f, ensure_ascii=False)
+        except Exception as e:
+            logger.warning(f"Failed to save vectors file: {e}")
+
+    async def add_vectors(self, doc_id: int, chunks: List[tuple]):
+        """chunks: [(chunk_index, content, vector), ...]"""
+        import numpy as np
+        for chunk_index, content, vector in chunks:
+            self._vectors.append({
+                "doc_id": doc_id,
+                "chunk_id": chunk_index,
+                "content": content,
+                "vector": vector if isinstance(vector, list) else vector.tolist(),
+            })
+        self._save()
+        logger.info(f"Added {len(chunks)} vectors for doc {doc_id}, total: {len(self._vectors)}")
+
+    async def search(self, query_vector: List[float], top_k: int = 5,
+                     doc_ids: Optional[List[int]] = None) -> List[dict]:
+        import numpy as np
+        q = np.array(query_vector)
+        results = []
+        for v in self._vectors:
+            if doc_ids and v["doc_id"] not in doc_ids:
+                continue
+            vec = np.array(v["vector"])
+            score = float(np.dot(q, vec) / (np.linalg.norm(q) * np.linalg.norm(vec) + 1e-8))
+            results.append({
+                "doc_id": v["doc_id"],
+                "chunk_id": v["chunk_id"],
+                "content": v["content"],
+                "score": score,
+            })
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results[:top_k]
+
+    async def remove_doc(self, doc_id: int):
+        self._vectors = [v for v in self._vectors if v["doc_id"] != doc_id]
+        self._save()
+
+    async def count(self) -> int:
+        return len(self._vectors)
+
+
+class PgVectorStore:
+    """
+    PostgreSQL + pgvector 向量存储（生产环境）
     """
 
     async def add_vectors(self, doc_id: int, chunks: List[tuple]):
-        """
-        添加向量到数据库
-        chunks: [(chunk_index, content, embedding_vector), ...]
-        """
         from shared.database import async_session
+        from sqlalchemy import text
         async with async_session() as session:
             for chunk_index, content, vector in chunks:
-                # 将 list 转为 pgvector 格式字符串
                 vec_str = "[" + ",".join(str(v) for v in vector) + "]"
                 await session.execute(
                     text("""
@@ -78,13 +141,12 @@ class VectorStore:
 
     async def search(self, query_vector: List[float], top_k: int = 5,
                      doc_ids: Optional[List[int]] = None) -> List[dict]:
-        """向量检索，使用 pgvector 的余弦距离运算符 <=>"""
         from shared.database import async_session
+        from sqlalchemy import text
         vec_str = "[" + ",".join(str(v) for v in query_vector) + "]"
 
         async with async_session() as session:
             if doc_ids:
-                # 指定文档范围内检索
                 placeholders = ",".join(str(i) for i in doc_ids)
                 sql = text(f"""
                     SELECT document_id, chunk_index, content,
@@ -102,23 +164,16 @@ class VectorStore:
                     ORDER BY embedding <=> :query::vector
                     LIMIT :top_k
                 """)
-
             result = await session.execute(sql, {"query": vec_str, "top_k": top_k})
             rows = result.fetchall()
-
             return [
-                {
-                    "doc_id": row[0],
-                    "chunk_id": row[1],
-                    "content": row[2],
-                    "score": float(row[3]),
-                }
-                for row in rows
+                {"doc_id": r[0], "chunk_id": r[1], "content": r[2], "score": float(r[3])}
+                for r in rows
             ]
 
     async def remove_doc(self, doc_id: int):
-        """删除某文档的所有向量"""
         from shared.database import async_session
+        from sqlalchemy import text
         async with async_session() as session:
             await session.execute(
                 text("DELETE FROM document_embeddings WHERE document_id = :doc_id"),
@@ -127,15 +182,24 @@ class VectorStore:
             await session.commit()
 
     async def count(self) -> int:
-        """获取向量总数"""
         from shared.database import async_session
+        from sqlalchemy import text
         async with async_session() as session:
             result = await session.execute(text("SELECT COUNT(*) FROM document_embeddings"))
             return result.scalar() or 0
 
 
-# 全局向量存储实例
-vector_store = VectorStore()
+# 根据环境选择存储后端
+def _is_postgres() -> bool:
+    db_url = os.getenv("DATABASE_URL", "")
+    return bool(db_url) and "postgresql" in db_url
+
+if _is_postgres():
+    vector_store = PgVectorStore()
+    logger.info("Using PostgreSQL + pgvector for vector storage")
+else:
+    vector_store = FileVectorStore()
+    logger.info("Using JSON file for vector storage (local dev mode)")
 
 
 class RAGService:
@@ -145,12 +209,10 @@ class RAGService:
         """将文档切片向量化并存入向量库"""
         if not chunks:
             return
-
         vectors = embed_texts(chunks)
-        chunk_data = list(enumerate(zip(chunks, vectors)))
-        # [(chunk_index, content, vector), ...]
-        data = [(i, content, vec) for i, (content, vec) in chunk_data]
-        await vector_store.add_vectors(doc_id, data)
+        data = list(enumerate(zip(chunks, vectors)))
+        chunk_data = [(i, content, vec) for i, (content, vec) in data]
+        await vector_store.add_vectors(doc_id, chunk_data)
 
     async def search(self, query: str, top_k: int = 5,
                      doc_ids: Optional[List[int]] = None) -> List[dict]:
@@ -164,11 +226,9 @@ class RAGService:
         results = await self.search(query, top_k, doc_ids)
         if not results:
             return ""
-
         context_parts = []
         for i, r in enumerate(results, 1):
             context_parts.append(f"[参考片段 {i}] (相关度: {r['score']:.2f})\n{r['content']}")
-
         return "\n\n".join(context_parts)
 
     async def remove_document(self, doc_id: int):
