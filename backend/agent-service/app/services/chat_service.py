@@ -94,7 +94,8 @@ class ChatService:
         await self.db.delete(conv)
         await self.db.commit()
 
-    async def chat(self, user_id: int, message: str, conversation_id: Optional[int] = None) -> dict:
+    async def chat(self, user_id: int, message: str, conversation_id: Optional[int] = None,
+                   model_key: str = "deepseek") -> dict:
         """非流式对话"""
         conv = await self.get_or_create_conversation(conversation_id, user_id)
         await self.save_message(conv.id, "user", message)
@@ -112,7 +113,7 @@ class ChatService:
                 pass
 
         messages = llm_client.build_messages(message, history=history, context=context)
-        reply = await llm_client.chat(messages)
+        reply = await llm_client.chat(messages, model_key=model_key)
 
         assistant_msg = await self.save_message(conv.id, "assistant", reply)
 
