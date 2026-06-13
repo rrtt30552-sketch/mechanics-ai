@@ -2,30 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system deps
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install Python deps
-COPY shared/requirements.txt /app/shared/requirements.txt
-RUN pip install --no-cache-dir -r /app/shared/requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
-
-# Copy shared library
 COPY shared/ /app/shared/
+COPY requirements.txt /app/requirements.txt 2>/dev/null || true
 
-# Copy all services (each runs from its own working_dir)
-COPY user-service/ /app/user-service/
-COPY knowledge-service/ /app/knowledge-service/
-COPY agent-service/ /app/agent-service/
-COPY ai-service/ /app/ai-service/
-COPY learning-service/ /app/learning-service/
-COPY engineering-service/ /app/engineering-service/
-COPY diagnosis-service/ /app/diagnosis-service/
-COPY rag-service/ /app/rag-service/
-COPY auth-service/ /app/auth-service/
-COPY task-service/ /app/task-service/
+RUN pip install --no-cache-dir fastapi uvicorn sqlalchemy asyncpg httpx pyjwt python-multipart -i https://pypi.tuna.tsinghua.edu.cn/simple
 
-ENV PYTHONPATH=/app
+COPY . /app/
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
