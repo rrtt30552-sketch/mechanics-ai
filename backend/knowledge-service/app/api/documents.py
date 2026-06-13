@@ -5,7 +5,7 @@ from typing import Optional, List
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from shared.database import get_db
-from shared.security import verify_token
+from shared.security import get_current_user
 from shared.exceptions import UnauthorizedException, BadRequestException
 
 from app.schemas.document import DocumentCreate, DocumentResponse, SearchRequest, SearchResponse
