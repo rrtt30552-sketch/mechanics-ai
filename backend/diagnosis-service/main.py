@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 
@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from shared.cors import add_cors_middleware
 from shared.llm import llm_client
+from shared.security import get_current_user
 
 app = FastAPI(title="Diagnosis Service", version="1.0.0")
 add_cors_middleware(app)
@@ -21,7 +22,7 @@ async def call_llm(user_prompt: str) -> str:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ]
-        return await llm_client.chat(messages, model_key="mimo")
+        return await llm_client.chat(messages, model_key="mimo-flash")
     except ValueError as e:
         return f"请先配置 API Key: {e}"
     except Exception as e:
@@ -58,7 +59,7 @@ async def health():
 
 
 @app.post("/api/diagnosis/fault")
-async def fault_diagnosis(req: FaultDiagnosisRequest):
+async def fault_diagnosis(req: FaultDiagnosisRequest, user=Depends(get_current_user)):
     symptoms = "\n".join(f"  - {s}" for s in req.symptoms)
     conds = "\n".join(f"  - {k}: {v}" for k, v in req.operating_conditions.items()) if req.operating_conditions else "未提供"
     prompt = f"""请诊断以下设备故障：
@@ -75,7 +76,7 @@ async def fault_diagnosis(req: FaultDiagnosisRequest):
 
 
 @app.post("/api/diagnosis/vibration")
-async def vibration_analysis(req: VibrationAnalysisRequest):
+async def vibration_analysis(req: VibrationAnalysisRequest, user=Depends(get_current_user)):
     prompt = f"""请对以下设备进行振动分析：
 
 【设备】{req.equipment}
@@ -87,7 +88,7 @@ async def vibration_analysis(req: VibrationAnalysisRequest):
 
 
 @app.post("/api/diagnosis/wear")
-async def wear_analysis(req: WearAnalysisRequest):
+async def wear_analysis(req: WearAnalysisRequest, user=Depends(get_current_user)):
     prompt = f"""请分析以下磨损问题：
 
 【零件】{req.component}
@@ -100,7 +101,7 @@ async def wear_analysis(req: WearAnalysisRequest):
 
 
 @app.post("/api/diagnosis/maintenance-plan")
-async def maintenance_plan(req: MaintenancePlanRequest):
+async def maintenance_plan(req: MaintenancePlanRequest, user=Depends(get_current_user)):
     issues = "\n".join(f"  - {i}" for i in req.current_issues) if req.current_issues else "无"
     prompt = f"""请为以下设备制定维护计划：
 

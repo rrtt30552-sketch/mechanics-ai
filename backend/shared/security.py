@@ -76,7 +76,7 @@ def get_password_hash(password: str) -> str:
     return f"pbkdf2:{_HASH_ALGO}:{_HASH_ITERATIONS}:{salt}:{dk.hex()}"
 
 
-def verify_password(plain_password: str, hashed_password: str) -> str:
+def verify_password(plain_password: str, hashed_password: str) -> bool:
     """验证密码"""
     # 兼容旧的 SHA256 格式
     if not hashed_password.startswith("pbkdf2:"):

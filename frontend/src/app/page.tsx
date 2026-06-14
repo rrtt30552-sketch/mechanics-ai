@@ -36,9 +36,9 @@ const features = [
   },
   {
     icon: '📊',
-    title: '后台管理',
-    desc: '用户管理、权限控制、数据统计、系统日志',
-    href: '/admin',
+    title: '知识检索',
+    desc: '基于向量语义搜索，快速定位知识库中的相关内容',
+    href: '/knowledge',
   },
 ];
 
@@ -174,7 +174,7 @@ export default function Home() {
               { name: 'Next.js', desc: '前端框架' },
               { name: 'FastAPI', desc: '后端服务' },
               { name: 'PostgreSQL', desc: '关系数据库' },
-              { name: 'Milvus', desc: '向量数据库' },
+              { name: 'pgvector', desc: '向量检索' },
               { name: 'DeepSeek', desc: 'AI 大模型' },
               { name: 'RAG', desc: '检索增强生成' },
               { name: 'Docker', desc: '容器化部署' },

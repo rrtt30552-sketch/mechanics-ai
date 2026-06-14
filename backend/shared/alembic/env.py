@@ -15,8 +15,28 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from shared.database import Base
 
-# 导入所有 model 以注册到 metadata
-from user_service_app import *  # noqa — 实际使用时按需导入
+# 导入所有 model 以注册到 metadata（Alembic autogenerate 需要）
+# 各 service 目录名含连字符（如 user-service），不能直接作为 Python 包
+# 且它们都有同名的 app/ 子包，需要逐个加入 sys.path 并清除缓存后导入
+import importlib, glob, os as _os
+
+_backend_dir = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), '..', '..'))
+_model_files = glob.glob(_os.path.join(_backend_dir, '*', 'app', 'models', '*.py'))
+_model_files = [f for f in _model_files if not f.endswith('__init__.py')]
+
+for models_file in _model_files:
+    service_dir = _os.path.dirname(_os.path.dirname(_os.path.dirname(models_file)))
+    mod_name = 'app.models.' + _os.path.splitext(_os.path.basename(models_file))[0]
+    # 清除已缓存的 app 模块，避免同名包冲突
+    cached = [k for k in sys.modules if k == 'app' or k.startswith('app.')]
+    for k in cached:
+        del sys.modules[k]
+    sys.path.insert(0, service_dir)
+    try:
+        importlib.import_module(mod_name)
+    except Exception:
+        pass
+    sys.path.remove(service_dir)
 
 config = context.config
 

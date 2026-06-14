@@ -5,7 +5,7 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm install --loglevel verbose
+RUN npm ci --omit=dev
 COPY . .
 RUN npm run build
 

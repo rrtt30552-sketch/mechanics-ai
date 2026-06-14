@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 import json
@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from shared.cors import add_cors_middleware
 from shared.llm import llm_client
 from shared.rag import rag_service
+from shared.security import get_current_user
 
 app = FastAPI(title="Learning Service", version="1.0.0")
 add_cors_middleware(app)
@@ -47,7 +48,7 @@ async def get_ai_response(system_prompt: str, user_prompt: str) -> str:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
-        return await llm_client.chat(messages, model_key="mimo")
+        return await llm_client.chat(messages, model_key="mimo-flash")
     except ValueError as e:
         return f"请先配置 API Key: {e}"
     except Exception as e:
@@ -72,7 +73,7 @@ async def health():
 
 
 @app.post("/api/learning/tutor")
-async def course_tutor(req: CourseTutorRequest):
+async def course_tutor(req: CourseTutorRequest, user=Depends(get_current_user)):
     context = await get_rag_context(req.topic + " " + (req.question or ""))
     level_map = {"undergraduate": "本科", "graduate": "研究生", "professional": "工程实践"}
     level_cn = level_map.get(req.level, "本科")
@@ -94,7 +95,7 @@ async def course_tutor(req: CourseTutorRequest):
 
 
 @app.post("/api/learning/exercises")
-async def generate_exercises(req: ExerciseRequest):
+async def generate_exercises(req: ExerciseRequest, user=Depends(get_current_user)):
     context = await get_rag_context(req.topic)
     type_map = {
         "choice": "选择题（含4个选项A/B/C/D，标注正确答案）",
@@ -131,7 +132,7 @@ async def generate_exercises(req: ExerciseRequest):
 
 
 @app.post("/api/learning/exam-prep")
-async def exam_prep(req: ExamPrepRequest):
+async def exam_prep(req: ExamPrepRequest, user=Depends(get_current_user)):
     subjects_str = "、".join(req.subjects) if req.subjects else "机械原理、机械设计、材料力学"
     context = await get_rag_context(f"{req.exam_type} {subjects_str}")
 
@@ -148,7 +149,7 @@ async def exam_prep(req: ExamPrepRequest):
 
 
 @app.post("/api/learning/mistake-analysis")
-async def mistake_analysis(req: MistakeAnalysisRequest):
+async def mistake_analysis(req: MistakeAnalysisRequest, user=Depends(get_current_user)):
     prompt = f"""学生做错了一道机械工程题，请分析。
 
 【题目】{req.question}

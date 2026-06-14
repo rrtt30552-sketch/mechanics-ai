@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 
@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from shared.cors import add_cors_middleware
 from shared.llm import llm_client
+from shared.security import get_current_user
 
 app = FastAPI(title="Engineering Service", version="1.0.0")
 add_cors_middleware(app)
@@ -21,7 +22,7 @@ async def call_llm(user_prompt: str) -> str:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ]
-        return await llm_client.chat(messages, model_key="mimo")
+        return await llm_client.chat(messages, model_key="mimo-flash")
     except ValueError as e:
         return f"请先配置 API Key: {e}"
     except Exception as e:
@@ -57,7 +58,7 @@ async def health():
 
 
 @app.post("/api/engineering/design-advice")
-async def design_advice(req: DesignAdviceRequest):
+async def design_advice(req: DesignAdviceRequest, user=Depends(get_current_user)):
     constraints = "\n".join(f"  - {c}" for c in req.constraints) if req.constraints else "无"
     prompt = f"""请对以下设计需求给出专业建议：
 
@@ -70,7 +71,7 @@ async def design_advice(req: DesignAdviceRequest):
 
 
 @app.post("/api/engineering/selection")
-async def component_selection(req: SelectionRequest):
+async def component_selection(req: SelectionRequest, user=Depends(get_current_user)):
     reqs = "\n".join(f"  - {k}: {v}" for k, v in req.requirements.items())
     prompt = f"""请为以下零部件选型：
 
@@ -83,7 +84,7 @@ async def component_selection(req: SelectionRequest):
 
 
 @app.post("/api/engineering/bom")
-async def bom_analysis(req: BOMRequest):
+async def bom_analysis(req: BOMRequest, user=Depends(get_current_user)):
     prompt = f"""请为以下装配体生成 BOM 物料清单：
 
 【描述】{req.assembly_description}
@@ -93,7 +94,7 @@ async def bom_analysis(req: BOMRequest):
 
 
 @app.post("/api/engineering/dfma")
-async def dfma_analysis(req: DFMARequest):
+async def dfma_analysis(req: DFMARequest, user=Depends(get_current_user)):
     prompt = f"""请对以下零件进行 DFMA 分析：
 
 【描述】{req.component_description}
@@ -104,7 +105,7 @@ async def dfma_analysis(req: DFMARequest):
 
 
 @app.post("/api/engineering/fmea")
-async def fmea_analysis(req: FMEARequest):
+async def fmea_analysis(req: FMEARequest, user=Depends(get_current_user)):
     prompt = f"""请对以下系统进行 FMEA 分析：
 
 【系统】{req.system_description}

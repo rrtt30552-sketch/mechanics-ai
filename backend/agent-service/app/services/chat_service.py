@@ -87,10 +87,9 @@ class ChatService:
         conv = await self.get_conversation(conv_id)
         if conv.user_id != user_id:
             raise NotFoundException("Conversation not found")
-        # Delete messages first
-        result = await self.db.execute(select(Message).where(Message.conversation_id == conv_id))
-        for msg in result.scalars().all():
-            await self.db.delete(msg)
+        # 批量删除消息
+        from sqlalchemy import delete as sql_delete
+        await self.db.execute(sql_delete(Message).where(Message.conversation_id == conv_id))
         await self.db.delete(conv)
         await self.db.commit()
 
