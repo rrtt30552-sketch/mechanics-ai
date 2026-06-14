@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 interface Document {
   id: number;
@@ -14,29 +15,50 @@ interface Document {
   created_at: string;
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
+
 export default function KnowledgePage() {
+  const router = useRouter();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [token, setToken] = useState<string>('');
+  const [error, setError] = useState<string>('');
+  const [successMsg, setSuccessMsg] = useState<string>('');
 
   useEffect(() => {
     const saved = localStorage.getItem('mechai_token');
-    if (saved) setToken(saved);
-  }, []);
+    if (!saved) {
+      router.push('/login');
+      return;
+    }
+    setToken(saved);
+  }, [router]);
 
   useEffect(() => {
     if (token) fetchDocuments();
   }, [token]);
 
+  // 自动清除提示
+  useEffect(() => {
+    if (successMsg || error) {
+      const t = setTimeout(() => { setSuccessMsg(''); setError(''); }, 3000);
+      return () => clearTimeout(t);
+    }
+  }, [successMsg, error]);
+
   const fetchDocuments = async () => {
     try {
-      const res = await fetch('/api/documents/', {
+      const res = await fetch(`${API_BASE}/api/documents/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (res.status === 401) {
+        localStorage.removeItem('mechai_token');
+        router.push('/login');
+        return;
+      }
       if (res.ok) {
-        const data = await res.json();
-        setDocuments(data);
+        setDocuments(await res.json());
       }
     } catch (err) {
       console.error('Failed to fetch documents:', err);
@@ -46,6 +68,10 @@ export default function KnowledgePage() {
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setUploading(true);
+    setError('');
+
+    let successCount = 0;
+    let failCount = 0;
 
     for (const file of Array.from(files)) {
       const formData = new FormData();
@@ -53,33 +79,50 @@ export default function KnowledgePage() {
       formData.append('title', file.name);
 
       try {
-        const res = await fetch('/api/documents/upload', {
+        const res = await fetch(`${API_BASE}/api/documents/upload`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
           body: formData,
         });
+        if (res.status === 401) {
+          localStorage.removeItem('mechai_token');
+          router.push('/login');
+          return;
+        }
         if (res.ok) {
-          await fetchDocuments();
+          successCount++;
+        } else {
+          failCount++;
+          const err = await res.json().catch(() => ({}));
+          console.error(`Upload failed for ${file.name}:`, err);
         }
       } catch (err) {
+        failCount++;
         console.error('Upload failed:', err);
       }
     }
+
+    if (successCount > 0) setSuccessMsg(`成功上传 ${successCount} 个文档`);
+    if (failCount > 0) setError(`${failCount} 个文档上传失败`);
+    if (successCount > 0) await fetchDocuments();
     setUploading(false);
   };
 
-  const handleDelete = async (docId: number) => {
-    if (!confirm('确定要删除这个文档吗？')) return;
+  const handleDelete = async (docId: number, docTitle: string) => {
+    if (!confirm(`确定要删除「${docTitle}」吗？此操作不可恢复。`)) return;
     try {
-      const res = await fetch(`/api/documents/${docId}`, {
+      const res = await fetch(`${API_BASE}/api/documents/${docId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
+        setSuccessMsg('文档已删除');
         await fetchDocuments();
+      } else {
+        setError('删除失败');
       }
     } catch (err) {
-      console.error('Delete failed:', err);
+      setError('删除失败，请检查网络');
     }
   };
 
@@ -96,14 +139,8 @@ export default function KnowledgePage() {
   };
 
   const typeIcon: Record<string, string> = {
-    pdf: '📄',
-    docx: '📝',
-    doc: '📝',
-    xlsx: '📊',
-    xls: '📊',
-    pptx: '📑',
-    ppt: '📑',
-    dwg: '📐',
+    pdf: '📄', docx: '📝', doc: '📝', xlsx: '📊', xls: '📊',
+    pptx: '📑', ppt: '📑', dwg: '📐', txt: '📃',
   };
 
   return (
@@ -125,7 +162,7 @@ export default function KnowledgePage() {
               onChange={(e) => handleUpload(e.target.files)}
             />
             <button
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
               onClick={() => document.getElementById('fileInput')?.click()}
               disabled={uploading}
             >
@@ -136,18 +173,33 @@ export default function KnowledgePage() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 py-8">
+        {/* Toast 提示 */}
+        {successMsg && (
+          <div className="mb-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">
+            ✅ {successMsg}
+          </div>
+        )}
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm">
+            ❌ {error}
+          </div>
+        )}
+
         {/* Upload Zone */}
         <div
-          className={`border-2 border-dashed rounded-2xl p-12 text-center mb-8 transition-all ${
-            dragOver ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-white'
+          className={`border-2 border-dashed rounded-2xl p-12 text-center mb-8 transition-all cursor-pointer ${
+            dragOver ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-white hover:border-blue-300'
           }`}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
+          onClick={() => document.getElementById('fileInput')?.click()}
         >
           <div className="text-4xl mb-4">📁</div>
-          <p className="text-lg font-medium text-slate-700 mb-2">拖拽文件到此处上传</p>
-          <p className="text-sm text-slate-500">支持 PDF、Word、Excel、PPT、CAD 等格式</p>
+          <p className="text-lg font-medium text-slate-700 mb-2">
+            {uploading ? '正在上传...' : '拖拽文件到此处，或点击选择文件'}
+          </p>
+          <p className="text-sm text-slate-500">支持 PDF、Word、Excel、PPT、CAD、TXT 等格式</p>
         </div>
 
         {/* Stats */}
@@ -187,19 +239,19 @@ export default function KnowledgePage() {
                   <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">大小</th>
                   <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">切片</th>
                   <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">上传时间</th>
-                  <th className="text-left px-6 py-3 text-sm font-medium text-slate-600">操作</th>
+                  <th className="text-right px-6 py-3 text-sm font-medium text-slate-600">操作</th>
                 </tr>
               </thead>
               <tbody>
                 {documents.map((doc) => (
-                  <tr key={doc.id} className="border-b border-slate-100 hover:bg-slate-50">
+                  <tr key={doc.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <span className="text-2xl">{typeIcon[doc.file_type] || '📄'}</span>
                         <div>
                           <div className="font-medium text-slate-900">{doc.title}</div>
                           {doc.tags.length > 0 && (
-                            <div className="flex gap-1 mt-1">
+                            <div className="flex gap-1 mt-1 flex-wrap">
                               {doc.tags.map((tag) => (
                                 <span key={tag} className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
                                   {tag}
@@ -216,10 +268,10 @@ export default function KnowledgePage() {
                     <td className="px-6 py-4 text-sm text-slate-500">
                       {new Date(doc.created_at).toLocaleDateString('zh-CN')}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 text-right">
                       <button
-                        className="text-red-500 hover:text-red-700 text-sm"
-                        onClick={() => handleDelete(doc.id)}
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1 rounded-lg text-sm transition-colors"
+                        onClick={() => handleDelete(doc.id, doc.title)}
                       >
                         删除
                       </button>

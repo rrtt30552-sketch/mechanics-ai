@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -15,6 +16,7 @@ const tabs: { key: Tab; icon: string; label: string }[] = [
 ];
 
 export default function LearningPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>('tutor');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState('');
@@ -42,8 +44,12 @@ export default function LearningPage() {
 
   useEffect(() => {
     const saved = localStorage.getItem('mechai_token');
-    if (saved) setToken(saved);
-  }, []);
+    if (!saved) {
+      router.push('/login');
+      return;
+    }
+    setToken(saved);
+  }, [router]);
 
   const callAPI = async (path: string, body: any) => {
     if (!token) {
@@ -61,6 +67,11 @@ export default function LearningPage() {
         },
         body: JSON.stringify(body),
       });
+      if (res.status === 401) {
+        localStorage.removeItem('mechai_token');
+        router.push('/login');
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         setResult(data.reply || JSON.stringify(data, null, 2));

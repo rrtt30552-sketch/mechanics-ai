@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 interface Message {
   id: number | string;
@@ -144,7 +145,10 @@ export default function ChatPage() {
         }),
       });
 
-      if (!res.ok) throw new Error('请求失败');
+      if (!res.ok) {
+        if (res.status === 401) { logout(); return; }
+        throw new Error('请求失败');
+      }
 
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
@@ -209,6 +213,32 @@ export default function ChatPage() {
     setConversationId(null);
   };
 
+  const logout = () => {
+    localStorage.removeItem('mechai_token');
+    localStorage.removeItem('mechai_model');
+    window.location.href = '/login';
+  };
+
+  const deleteConversation = async (convId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('确定删除这个对话吗？')) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/conversations/${convId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        if (conversationId === convId) {
+          setMessages([]);
+          setConversationId(null);
+        }
+        loadConversations();
+      } else if (res.status === 401) {
+        logout();
+      }
+    } catch {}
+  };
+
   const currentModel = models.find((m) => m.key === selectedModel);
 
   if (!token) {
@@ -248,15 +278,23 @@ export default function ChatPage() {
             <div className="text-sm text-slate-400 px-2 py-3">暂无历史对话</div>
           ) : (
             conversations.map((c) => (
-              <button
-                key={c.id}
-                className={`w-full text-left text-sm px-3 py-2.5 rounded-lg transition-colors truncate ${
-                  c.id === conversationId ? 'bg-blue-600/30 text-blue-200' : 'text-slate-300 hover:bg-slate-800'
-                }`}
-                onClick={() => loadMessages(c.id)}
-              >
-                {c.title}
-              </button>
+              <div key={c.id} className="group relative">
+                <button
+                  className={`w-full text-left text-sm px-3 py-2.5 rounded-lg transition-colors truncate pr-8 ${
+                    c.id === conversationId ? 'bg-blue-600/30 text-blue-200' : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                  onClick={() => loadMessages(c.id)}
+                >
+                  {c.title}
+                </button>
+                <button
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity px-1"
+                  onClick={(e) => deleteConversation(c.id, e)}
+                  title="删除对话"
+                >
+                  ✕
+                </button>
+              </div>
             ))
           )}
         </div>
@@ -265,6 +303,12 @@ export default function ChatPage() {
           <Link href="/learning" className="flex items-center gap-2 text-slate-300 hover:text-white text-sm py-2">📖 学习辅助</Link>
           <Link href="/engineering" className="flex items-center gap-2 text-slate-300 hover:text-white text-sm py-2">⚙️ 工程辅助</Link>
           <Link href="/diagnosis" className="flex items-center gap-2 text-slate-300 hover:text-white text-sm py-2">🔍 故障诊断</Link>
+          <button
+            onClick={logout}
+            className="flex items-center gap-2 text-slate-500 hover:text-red-400 text-sm py-2 w-full"
+          >
+            🚪 退出登录
+          </button>
         </div>
       </aside>
 

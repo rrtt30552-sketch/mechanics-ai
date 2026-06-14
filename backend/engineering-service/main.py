@@ -1,15 +1,15 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
 
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 
+from shared.cors import add_cors_middleware
 from shared.llm import llm_client
 
 app = FastAPI(title="Engineering Service", version="1.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+add_cors_middleware(app)
 
 SYSTEM_PROMPT = """你是一位资深机械工程师，拥有20年以上工程设计经验。
 回答时请给出具体参数和数据，引用相关标准(GB/ISO/DIN)，考虑制造可行性和成本。"""

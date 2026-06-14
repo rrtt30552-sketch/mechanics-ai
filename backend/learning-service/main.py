@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
 import json
@@ -7,11 +6,12 @@ import json
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 
+from shared.cors import add_cors_middleware
 from shared.llm import llm_client
 from shared.rag import rag_service
 
 app = FastAPI(title="Learning Service", version="1.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+add_cors_middleware(app)
 
 
 # ==================== Schemas ====================

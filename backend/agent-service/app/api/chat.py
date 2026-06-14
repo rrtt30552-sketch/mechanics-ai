@@ -9,6 +9,7 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from shared.database import get_db
 from shared.security import get_current_user
+from shared.rate_limit import rate_limit_dependency
 from app.services.chat_service import ChatService
 from app.services.llm_client import llm_client
 
@@ -28,7 +29,8 @@ async def list_models(user=Depends(get_current_user)):
 
 
 @router.post("/")
-async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db), user=Depends(get_current_user),
+               _rate=Depends(rate_limit_dependency)):
     """普通对话（非流式）"""
     service = ChatService(db)
     result = await service.chat(user.id, req.message, req.conversation_id, model_key=req.model)
@@ -36,7 +38,8 @@ async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db), user=Depend
 
 
 @router.post("/stream")
-async def chat_stream(req: ChatRequest, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+async def chat_stream(req: ChatRequest, db: AsyncSession = Depends(get_db), user=Depends(get_current_user),
+                      _rate=Depends(rate_limit_dependency)):
     """流式对话（SSE）"""
     service = ChatService(db)
 

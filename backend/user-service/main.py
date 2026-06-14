@@ -1,13 +1,13 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 
+from shared.cors import add_cors_middleware
 from app.api.users import router as users_router
 
-app = FastAPI(title="User Service", version="0.2.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app = FastAPI(title="User Service", version="0.3.0")
+add_cors_middleware(app)
 
 app.include_router(users_router)
 

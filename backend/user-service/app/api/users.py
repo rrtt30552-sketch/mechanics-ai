@@ -4,25 +4,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 from typing import Optional
-import hashlib
 
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from shared.database import get_db
-from shared.security import create_access_token, get_current_user
-from app.models.user import User
+from shared.security import create_access_token, get_current_user, get_password_hash, verify_password
+from app.models.user import User, UserRole
 
 router = APIRouter(prefix="/api/users", tags=["users"])
-
-
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
 
 
 class RegisterRequest(BaseModel):
     username: str
     password: str
     email: Optional[str] = None
+    full_name: Optional[str] = None
 
 
 @router.post("/register")
@@ -42,7 +38,10 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     user = User(
         username=req.username,
         email=req.email,
-        hashed_password=hash_password(req.password),
+        full_name=req.full_name,
+        hashed_password=get_password_hash(req.password),
+        role=UserRole.USER,
+        is_active=True,
     )
     db.add(user)
     await db.commit()
@@ -57,10 +56,13 @@ async def login(form: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = 
     result = await db.execute(select(User).where(User.username == form.username))
     user = result.scalar_one_or_none()
 
-    if not user or user.hashed_password != hash_password(form.password):
+    if not user or not verify_password(form.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
 
-    token = create_access_token(user.id, user.username)
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="账号已被禁用")
+
+    token = create_access_token(user.id, user.username, user.role.value if hasattr(user.role, 'value') else "user")
     return {"access_token": token, "token_type": "bearer"}
 
 
@@ -71,4 +73,12 @@ async def get_me(user=Depends(get_current_user), db: AsyncSession = Depends(get_
     u = result.scalar_one_or_none()
     if not u:
         raise HTTPException(status_code=404, detail="用户不存在")
-    return {"id": u.id, "username": u.username, "email": u.email, "created_at": str(u.created_at)}
+    return {
+        "id": u.id,
+        "username": u.username,
+        "email": u.email,
+        "full_name": u.full_name,
+        "role": u.role.value if hasattr(u.role, 'value') else str(u.role),
+        "is_active": u.is_active,
+        "created_at": str(u.created_at),
+    }

@@ -1,40 +1,55 @@
 # Python
 __pycache__/
 *.py[cod]
+*$py.class
 *.egg-info/
 dist/
 build/
-.eggs/
 *.egg
-.venv/
+.eggs/
+
+# Virtual environments
 venv/
+.venv/
 env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.sqlite3
+
+# Vector store (local dev)
+vectors.json
 
 # Node
 node_modules/
 .next/
 out/
-.env
-.env.local
+.turbo/
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Docker
+docker-compose.override.yml
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Docker
-docker-compose.override.yml
-
 # Logs
 *.log
+logs/
 
-# Data
-*.db
-*.sqlite
-vectors.json
+# Coverage
+htmlcov/
+.coverage
+coverage/

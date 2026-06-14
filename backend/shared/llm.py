@@ -231,11 +231,14 @@ class MultiLLMClient:
                             break
                         try:
                             data = json.loads(data_str)
-                            delta = data["choices"][0].get("delta", {})
+                            choices = data.get("choices", [])
+                            if not choices:
+                                continue
+                            delta = choices[0].get("delta", {})
                             content = delta.get("content", "")
                             if content:
                                 yield content
-                        except json.JSONDecodeError:
+                        except (json.JSONDecodeError, IndexError, KeyError):
                             continue
 
 

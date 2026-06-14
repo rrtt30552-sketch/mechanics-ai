@@ -1,15 +1,15 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
 
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 
+from shared.cors import add_cors_middleware
 from shared.llm import llm_client
 
 app = FastAPI(title="Diagnosis Service", version="1.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+add_cors_middleware(app)
 
 SYSTEM_PROMPT = """你是一位高级设备诊断工程师，精通机械故障诊断、振动分析、磨损机理和预防性维护。
 回答时按可能性排序，给出具体检查方法和量化判断标准。"""

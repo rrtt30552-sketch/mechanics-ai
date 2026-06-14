@@ -30,6 +30,7 @@ class UserService:
             hashed_password=get_password_hash(data.password),
             full_name=data.full_name,
             role=data.role,
+            is_active=True,
         )
         self.db.add(user)
         await self.db.commit()
@@ -44,7 +45,7 @@ class UserService:
         if not user.is_active:
             raise UnauthorizedException("Account disabled")
 
-        token = create_access_token(data={"sub": str(user.id), "username": user.username, "role": user.role.value})
+        token = create_access_token(user.id, user.username, user.role.value if hasattr(user.role, 'value') else "user")
         return Token(access_token=token)
 
     async def get_user(self, user_id: int) -> User:

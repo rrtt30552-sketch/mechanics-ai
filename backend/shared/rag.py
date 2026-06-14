@@ -12,12 +12,9 @@ import logging
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from shared.embedding import embed_query, embed_texts
+from shared.embedding import embed_query, embed_texts, EMBEDDING_DIM
 
 logger = logging.getLogger(__name__)
-
-# Embedding 维度 (all-MiniLM-L6-v2 = 384)
-EMBEDDING_DIM = 384
 
 # 向量存储文件路径（本地模式）
 VECTORS_FILE = os.path.join(os.path.dirname(__file__), '..', '..', 'vectors.json')
@@ -147,7 +144,9 @@ class PgVectorStore:
 
         async with async_session() as session:
             if doc_ids:
-                placeholders = ",".join(str(i) for i in doc_ids)
+                # 使用参数化查询防止 SQL 注入
+                id_params = {f"doc_id_{i}": v for i, v in enumerate(doc_ids)}
+                placeholders = ", ".join(f":doc_id_{i}" for i in range(len(doc_ids)))
                 sql = text(f"""
                     SELECT document_id, chunk_index, content,
                            1 - (embedding <=> :query::vector) AS score
@@ -156,6 +155,7 @@ class PgVectorStore:
                     ORDER BY embedding <=> :query::vector
                     LIMIT :top_k
                 """)
+                params = {"query": vec_str, "top_k": top_k, **id_params}
             else:
                 sql = text("""
                     SELECT document_id, chunk_index, content,
@@ -164,7 +164,8 @@ class PgVectorStore:
                     ORDER BY embedding <=> :query::vector
                     LIMIT :top_k
                 """)
-            result = await session.execute(sql, {"query": vec_str, "top_k": top_k})
+                params = {"query": vec_str, "top_k": top_k}
+            result = await session.execute(sql, params)
             rows = result.fetchall()
             return [
                 {"doc_id": r[0], "chunk_id": r[1], "content": r[2], "score": float(r[3])}

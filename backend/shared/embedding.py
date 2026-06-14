@@ -15,20 +15,41 @@ os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 # ========== 尝试加载 sentence-transformers ==========
 _MODEL = None
-_MODEL_NAME = "all-MiniLM-L6-v2"
+# 优先用中文模型，回退到多语言模型
+_MODEL_CANDIDATES = [
+    os.getenv("EMBEDDING_MODEL", ""),  # 用户自定义
+    "BAAI/bge-base-zh-v1.5",           # 中文专用，768维
+    "moka-ai/m3e-base",                # 中文专用，768维
+    "all-MiniLM-L6-v2",                # 多语言回退，384维
+]
+_MODEL_NAME = ""
 _USE_ST = False
+EMBEDDING_DIM = 384  # 默认维度，加载模型后更新
 
 def _try_load_st():
-    global _MODEL, _USE_ST
+    global _MODEL, _MODEL_NAME, _USE_ST, EMBEDDING_DIM
     try:
         from sentence_transformers import SentenceTransformer
-        _MODEL = SentenceTransformer(_MODEL_NAME)
-        _USE_ST = True
-        logger.info(f"Loaded sentence-transformers model: {_MODEL_NAME}")
-        return True
-    except Exception as e:
-        logger.info(f"sentence-transformers not available ({e}), using TF-IDF fallback")
+    except ImportError:
+        logger.info("sentence-transformers not installed, using TF-IDF fallback")
         return False
+    for model_name in _MODEL_CANDIDATES:
+        if not model_name:
+            continue
+        try:
+            _MODEL = SentenceTransformer(model_name)
+            _MODEL_NAME = model_name
+            _USE_ST = True
+            # 获取实际维度
+            test_vec = _MODEL.encode(["test"], show_progress_bar=False)
+            EMBEDDING_DIM = len(test_vec[0])
+            logger.info(f"Loaded embedding model: {model_name} (dim={EMBEDDING_DIM})")
+            return True
+        except Exception as e:
+            logger.info(f"Failed to load {model_name}: {e}")
+            continue
+    logger.info("No sentence-transformers model available, using TF-IDF fallback")
+    return False
 
 # ========== TF-IDF 回退方案 ==========
 _TFIDF_VECTORIZER = None
